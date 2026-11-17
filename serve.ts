@@ -19,17 +19,34 @@ const MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
 };
 
 const server = createServer((req, res) => {
+  const started = Date.now();
   const path = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
   const file = join(root, path === '/' ? 'index.html' : path);
+  // Log every request with its status and time, so a failed asset shows up
+  // in the terminal instead of failing silently in the browser.
+  res.on('finish', () => {
+    console.log(`${new Date().toISOString()} ${req.method} ${path} -> ${res.statusCode} ${Date.now() - started}ms`);
+  });
   if (!file.startsWith(root) || !existsSync(file) || !statSync(file).isFile()) {
     res.writeHead(404, { 'content-type': 'text/plain' });
     res.end('not found\n');
     return;
   }
-  res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
+  // No caching while play-testing: edits to game/ must show up on reload.
+  const headers = {
+    'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+    'cache-control': 'no-store',
+  };
+  if (req.method === 'HEAD') {
+    res.writeHead(200, { ...headers, 'content-length': statSync(file).size });
+    res.end();
+    return;
+  }
+  res.writeHead(200, headers);
   res.end(readFileSync(file));
 });
 

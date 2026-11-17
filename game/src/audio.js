@@ -160,6 +160,34 @@
       setTimeout(function () { self.blip(1318, 0.18, 'sine', 0.16); }, 90);
     },
 
+    // Pickup chime: a brighter, quicker three-note sparkle than the mission
+    // chime, so grabbing health/ammo/repair reads as its own event.
+    pickupChime: function () {
+      const self = this;
+      [1046, 1318, 1568].forEach(function (n, i) {
+        setTimeout(function () { self.blip(n, 0.1, 'triangle', 0.14); }, i * 60);
+      });
+    },
+
+    // Jump: a quick rising whoosh; land: a soft low thud.
+    jump: function () {
+      if (!this.ctx) return;
+      const ctx = this.ctx;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(280, ctx.currentTime);
+      o.frequency.exponentialRampToValueAtTime(640, ctx.currentTime + 0.16);
+      g.gain.setValueAtTime(0.12, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      o.connect(g); g.connect(this.master);
+      o.start(); o.stop(ctx.currentTime + 0.18);
+    },
+
+    land: function () {
+      this.blip(95, 0.12, 'sine', 0.14);
+    },
+
     missionSting: function () {
       const notes = [523, 659, 784, 1046];
       const self = this;

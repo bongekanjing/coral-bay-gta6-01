@@ -21,23 +21,55 @@
     return wheel;
   }
 
+  // Roll a car class from the weights in config: mostly sedans, some
+  // sports cars, a few vans.
+  function pickClass(rng) {
+    const w = CFG.carClassWeights;
+    const roll = rng();
+    if (roll < w.sport) return 'sport';
+    if (roll < w.sport + w.sedan) return 'sedan';
+    return 'van';
+  }
+
+  // Handling numbers for a class name, falling back to the sedan defaults.
+  function classStats(cls) {
+    return CFG.carClasses[cls] || CFG.carClasses.sedan;
+  }
+
   // A readable low-poly car: body, cabin, wheels, lights, bumpers. No text, no
-  // borrowed brand shapes — just a generic modern sedan / hatchback silhouette.
-  function makeCar(color, isPolice) {
+  // borrowed brand shapes — just a generic modern silhouette, stretched or
+  // boxed out by class: sport is low and long, van is tall and square.
+  function makeCar(color, isPolice, carClass) {
+    const cls = isPolice ? 'sedan' : (carClass || 'sedan');
+    const dims = cls === 'sport' ? { bw: 1.9, bh: 0.5, bl: 4.7, cw: 1.6, ch: 0.42, cl: 2.0, cy: 1.08 } :
+      cls === 'van' ? { bw: 2.1, bh: 0.95, bl: 4.9, cw: 1.9, ch: 0.8, cl: 3.4, cy: 1.32 } :
+      { bw: 2.0, bh: 0.62, bl: 4.4, cw: 1.7, ch: 0.55, cl: 2.2, cy: 1.18 };
     const g = new THREE.Group();
     const bodyMat = new THREE.MeshLambertMaterial({ color: isPolice ? 0x1a1a1a : color });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.62, 4.4), bodyMat);
-    body.position.y = 0.62;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(dims.bw, dims.bh, dims.bl), bodyMat);
+    body.position.y = cls === 'van' ? 0.78 : 0.62;
     g.add(body);
     const cabinMat = new THREE.MeshLambertMaterial({ color: isPolice ? 0xf0f0f0 : 0x1c2733 });
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.55, 2.2), cabinMat);
-    cabin.position.set(0, 1.18, -0.25);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(dims.cw, dims.ch, dims.cl), cabinMat);
+    cabin.position.set(0, dims.cy, cls === 'van' ? 0.1 : -0.25);
     g.add(cabin);
     // Glass band.
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.34, 2.0),
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(dims.cw + 0.04, dims.ch * 0.6, dims.cl - 0.2),
       new THREE.MeshLambertMaterial({ color: 0x2c4a63 }));
-    glass.position.set(0, 1.16, -0.25);
+    glass.position.set(0, dims.cy - 0.02, cls === 'van' ? 0.1 : -0.25);
     g.add(glass);
+    // Sport cars get a rear spoiler; vans get a roof rack.
+    if (cls === 'sport') {
+      const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.35),
+        new THREE.MeshLambertMaterial({ color: 0x1a1a1a }));
+      spoiler.position.set(0, 1.02, 2.15);
+      g.add(spoiler);
+    } else if (cls === 'van') {
+      const rack = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 2.6),
+        new THREE.MeshLambertMaterial({ color: 0x333333 }));
+      rack.position.set(0, 1.78, 0.1);
+      g.add(rack);
+    }
     // Police livery: white doors band and a light bar.
     if (isPolice) {
       const band = new THREE.Mesh(new THREE.BoxGeometry(2.04, 0.34, 2.4),
@@ -59,20 +91,21 @@
       g.userData.lightRed = red;
       g.userData.lightBlue = blue;
     }
-    // Headlights and taillights.
+    // Headlights and taillights, at the ends of the body for this class.
     const hlMat = new THREE.MeshLambertMaterial({ color: 0xfff6c8, emissive: 0x776611 });
     const tlMat = new THREE.MeshLambertMaterial({ color: 0xcc2222, emissive: 0x550000 });
+    const endZ = dims.bl / 2 + 0.02;
     for (const sx of [-0.65, 0.65]) {
       const hl = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.08), hlMat);
-      hl.position.set(sx, 0.72, -2.22);
+      hl.position.set(sx, 0.72, -endZ);
       g.add(hl);
       const tl = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.08), tlMat);
-      tl.position.set(sx, 0.72, 2.22);
+      tl.position.set(sx, 0.72, endZ);
       g.add(tl);
     }
     // Bumpers.
     const bumpMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-    for (const z of [-2.24, 2.24]) {
+    for (const z of [-endZ, endZ]) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.22, 0.12), bumpMat);
       b.position.set(0, 0.42, z);
       g.add(b);
@@ -87,6 +120,7 @@
       wheels.push(w);
     }
     g.userData.wheels = wheels;
+    g.userData.carClass = cls;
     // Fake blob shadow.
     const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 5.0),
       new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28 }));
@@ -134,6 +168,8 @@
 
   const Vehicles = {
     makeCar: makeCar,
+    pickClass: pickClass,
+    classStats: classStats,
     collideBuildings: collideBuildings,
     clampToBounds: clampToBounds,
 
@@ -145,19 +181,22 @@
     init: function (scene, city, rng) {
       this.traffic = [];
       this.parked = [];
-      // Parked cars along curbs, using the city's spots.
+      // Parked cars along curbs, using the city's spots. Each rolls a class,
+      // so the street has quick sports cars, plain sedans and slow vans.
       for (let k = 0; k < 16; k++) {
         const s = city.parkedSpots[Math.floor(rng() * city.parkedSpots.length)];
-        const mesh = makeCar(CB.pick(rng, CFG.carPalette), false);
+        const carClass = pickClass(rng);
+        const mesh = makeCar(CB.pick(rng, CFG.carPalette), false, carClass);
         mesh.position.set(s.x, 0, s.z);
         mesh.rotation.y = s.heading;
         scene.add(mesh);
-        this.parked.push({ mesh: mesh, x: s.x, z: s.z, heading: s.heading, stolen: false });
+        this.parked.push({ mesh: mesh, x: s.x, z: s.z, heading: s.heading, stolen: false, carClass: carClass });
       }
       // Moving traffic.
       for (let k = 0; k < CFG.trafficCount; k++) {
         const node = city.intersections[Math.floor(rng() * city.intersections.length)];
-        const mesh = makeCar(CB.pick(rng, CFG.carPalette), false);
+        const carClass = pickClass(rng);
+        const mesh = makeCar(CB.pick(rng, CFG.carPalette), false, carClass);
         mesh.position.set(node.x, 0, node.z);
         scene.add(mesh);
         const car = {
@@ -165,7 +204,8 @@
           x: node.x, z: node.z,
           heading: rng() * Math.PI * 2,
           speed: 0,
-          targetSpeed: CFG.trafficSpeed * CB.range(rng, 0.8, 1.15),
+          carClass: carClass,
+          targetSpeed: classStats(carClass).topSpeed * 0.24 * CB.range(rng, 0.8, 1.15),
           node: node,
           next: null,
           wait: CB.range(rng, 0, 2),

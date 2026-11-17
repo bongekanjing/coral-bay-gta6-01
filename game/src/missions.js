@@ -34,8 +34,30 @@
       title: 'HEAT RUN',
       intro: 'The Kroll crew tipped off the PD. Three stars. Lose them, then vanish.',
       steps: [
-        { text: 'Lose the heat — get your wanted level to zero', kind: 'loseHeat' },
+        { text: 'Lose the heat — get your wanted level to zero', kind: 'loseHeat', setWanted: 3 },
         { text: 'Reach the safehouse on Gull Street', loc: 'safehouse', radius: 7 },
+      ],
+    },
+    {
+      id: 'm4',
+      title: 'THE VAULT',
+      intro: 'Marco has the Coral Bank cased. Wheels, a fast run, the vault — then gone.',
+      steps: [
+        { text: 'Steal a car for the job', kind: 'stealCar' },
+        { text: 'Reach the Coral Bank — 120 seconds', loc: 'bank', radius: 8, inCar: true, time: 120 },
+        { text: 'Get inside on foot — reach the vault door', loc: 'bankVault', radius: 5, kind: 'vault', onFoot: true },
+        { text: 'Lose the heat and reach the safehouse', loc: 'safehouse', radius: 7 },
+      ],
+    },
+    {
+      id: 'm5',
+      title: 'KING OF CORAL BAY',
+      intro: 'The last job. Four stars on your tail, one getaway, and the city is yours.',
+      steps: [
+        { text: 'Meet Marco at the pier for the last job', loc: 'marcoPier', radius: 6 },
+        { text: 'Lose the heat — get your wanted level to zero', kind: 'loseHeat', setWanted: 4 },
+        { text: 'Drive the getaway car to the Coral Hotel', loc: 'hotel', radius: 7, inCar: true },
+        { text: 'Victory lap — reach the plaza', loc: 'plaza', radius: 8 },
       ],
     },
   ];
@@ -53,6 +75,8 @@
     stepTimer: 0,
     taxi: null,         // {state, ped, dest, timer, fare}
     taxiCooldown: 12,
+    courier: null,       // {state, crate, pickup, dest, timer, fare}
+    courierCooldown: CFG.courierCooldown,
     stashes: [],
     stashCollected: 0,
     objectiveText: '',
@@ -62,7 +86,7 @@
       this.scene = scene;
       this.city = city;
       this.rng = rng;
-      this.index = save && save.missionsDone ? Math.min(save.missionsDone, 3) : 0;
+      this.index = save && save.missionsDone ? Math.min(save.missionsDone, STORY.length) : 0;
       this.stashCollected = 0;
       // Beacon: a glowing pillar and a pulsing ring at the objective.
       const beaconMat = new THREE.MeshBasicMaterial({
@@ -94,7 +118,7 @@
     startStory: function () {
       if (this.index >= STORY.length) {
         this.active = false;
-        this.objectiveText = 'Story complete — free roam. Taxi fares and stashes pay cash.';
+        this.objectiveText = 'Story complete — free roam. Taxi fares, courier runs and stashes pay cash.';
         this.setMarker(null);
         return;
       }
@@ -117,8 +141,9 @@
       } else {
         this.setMarker(null);
       }
-      if (m.id === 'm3' && this.step === 0) {
-        CB.Police.setWanted(3);
+      // A step can open with heat on (m3: 3 stars, m5: 4 stars).
+      if (s.setWanted) {
+        CB.Police.setWanted(s.setWanted);
       }
     },
 
@@ -135,6 +160,11 @@
     completeStep: function () {
       CB.AudioSys.chime();
       const m = STORY[this.index];
+      // Grabbing the vault trips the alarm: three stars the moment you leave.
+      if (m.steps[this.step].kind === 'vault') {
+        CB.Police.setWanted(3);
+        CB.HUD.flashObjective('The vault alarm is screaming — the PD is coming!');
+      }
       this.step++;
       if (this.step >= m.steps.length) {
         const reward = CFG.missionRewards[this.index];
@@ -142,6 +172,9 @@
         CB.HUD.banner('MISSION COMPLETE', m.title + ' — +$' + reward);
         CB.AudioSys.missionSting();
         this.index++;
+        // Save AFTER the index moves, or a returning player replays the
+        // mission they just finished (cash was saved pre-increment).
+        CB.Game.save();
         if (this.onMissionComplete) this.onMissionComplete(this.index);
         const self = this;
         setTimeout(function () { self.startStory(); }, 2200);
@@ -189,7 +222,7 @@
         if (s.loc) {
           const loc = this.city.locations[s.loc];
           const d = Math.hypot(player.x - loc.x, player.z - loc.z);
-          if (d < s.radius && (!s.inCar || player.inCar)) this.completeStep();
+          if (d < s.radius && (!s.inCar || player.inCar) && (!s.onFoot || !player.inCar)) this.completeStep();
         } else if (s.kind === 'stealCar' && player.inCar && player.carStolen) {
           this.completeStep();
         } else if (s.kind === 'inCar' && player.inCar) {
@@ -200,10 +233,16 @@
       }
       // Taxi fares: a fare appears after the first mission, every so often.
       this.taxiCooldown -= dt;
-      if (this.index >= 1 && !this.taxi && this.taxiCooldown <= 0) {
+      if (this.index >= 1 && !this.taxi && !this.courier && this.taxiCooldown <= 0) {
         this.spawnTaxi();
       }
       if (this.taxi) this.updateTaxi(dt, player);
+      // Courier runs: a timed parcel delivery, unlocked after mission 2.
+      this.courierCooldown -= dt;
+      if (this.index >= 2 && !this.courier && !this.taxi && this.courierCooldown <= 0) {
+        this.spawnCourier();
+      }
+      if (this.courier) this.updateCourier(dt, player);
       // Stashes: walk over one to collect it.
       for (const st of this.stashes) {
         if (st.taken) continue;
@@ -278,6 +317,90 @@
     taxiTimerText: function () {
       if (this.taxi && this.taxi.state === 'riding') return Math.ceil(this.taxi.timer) + 's';
       return '';
+    },
+
+    courierTimerText: function () {
+      if (this.courier && this.courier.state === 'deliver') return Math.ceil(this.courier.timer) + 's';
+      return '';
+    },
+
+    // Step-by-step tracker data for the HUD panel: title, each step's text,
+    // which are done and which is current, plus any live side job.
+    trackerData: function () {
+      const steps = [];
+      if (this.index >= STORY.length) {
+        steps.push({ text: 'Story complete — the city is yours.', done: true, current: false });
+      } else {
+        const m = STORY[this.index];
+        for (let i = 0; i < m.steps.length; i++) {
+          steps.push({ text: m.steps[i].text, done: i < this.step, current: this.active && i === this.step });
+        }
+        if (!this.active) steps.push({ text: 'Next mission starting…', done: false, current: true });
+      }
+      if (this.taxi) {
+        steps.push({ text: this.taxi.state === 'waiting' ?
+          'Taxi fare waiting — pick them up' :
+          'Taxi fare aboard — drop them off ($' + this.taxi.fare + ')', done: false, current: true });
+      }
+      if (this.courier) {
+        steps.push({ text: this.courier.state === 'pickup' ?
+          'Courier parcel waiting — grab it' :
+          'Courier run — deliver it fast ($' + this.courier.fare + ')', done: false, current: true });
+      }
+      return { title: this.index >= STORY.length ? 'FREE ROAM' : STORY[this.index].title, steps: steps };
+    },
+
+    // ---- courier runs ------------------------------------------------------
+    spawnCourier: function () {
+      const spots = this.city.sidewalkSpots;
+      const near = spots[Math.floor(this.rng() * spots.length)];
+      const dest = this.city.intersections[Math.floor(this.rng() * this.city.intersections.length)];
+      const fare = Math.round(CB.range(this.rng, CFG.courierFare[0], CFG.courierFare[1]));
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.8, 1.1),
+        new THREE.MeshLambertMaterial({ color: 0xe67e22, emissive: 0x7e5109 }));
+      crate.position.set(near.x, 0.6, near.z);
+      this.scene.add(crate);
+      this.courier = { state: 'pickup', crate: crate, pickup: { x: near.x, z: near.z },
+        dest: dest, fare: fare, timer: 0 };
+      CB.HUD.flashObjective('Courier parcel waiting nearby — grab it, then deliver fast');
+      this.setMarker({ x: near.x, z: near.z });
+    },
+
+    updateCourier: function (dt, player) {
+      const c = this.courier;
+      if (c.state === 'pickup') {
+        this.setMarker({ x: c.pickup.x, z: c.pickup.z });
+        c.crate.rotation.y += dt * 1.5;
+        if (Math.hypot(player.x - c.pickup.x, player.z - c.pickup.z) < 3) {
+          c.state = 'deliver';
+          c.timer = CFG.courierTime;
+          c.crate.visible = false;
+          CB.HUD.flashObjective('Parcel aboard! Deliver it in ' + CFG.courierTime + 's — $' + c.fare);
+          CB.AudioSys.chime();
+          this.setMarker({ x: c.dest.x, z: c.dest.z });
+        }
+      } else if (c.state === 'deliver') {
+        c.timer -= dt;
+        this.setMarker({ x: c.dest.x, z: c.dest.z });
+        if (Math.hypot(player.x - c.dest.x, player.z - c.dest.z) < 8) {
+          CB.Game.addCash(c.fare);
+          CB.HUD.flashObjective('Parcel delivered! +$' + c.fare);
+          CB.AudioSys.chime();
+          this.endCourier();
+        } else if (c.timer <= 0) {
+          CB.HUD.flashObjective('Too slow — the client cancelled the run.');
+          this.endCourier();
+        }
+      }
+    },
+
+    endCourier: function () {
+      if (this.courier) {
+        this.scene.remove(this.courier.crate);
+        this.courier = null;
+      }
+      this.courierCooldown = CFG.courierCooldown;
+      if (this.active) this.applyStep(); else this.setMarker(null);
     },
 
     missionTimerText: function () {

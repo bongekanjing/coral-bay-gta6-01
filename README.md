@@ -25,21 +25,29 @@ No build step, no network requests: every file the game loads lives under
 ## What is in the game
 
 - **A city to explore on foot and by car** — Coral Bay: a sun-soaked coastal
-  grid of streets, towers, a plaza with a fountain, a park, a beach with a
-  pier and the ocean beyond it.
+  grid of streets, towers with lit windows, a neon-signed downtown strip, a
+  plaza with a fountain, a park, a beach with a pier and the ocean beyond it.
 - **Traffic and pedestrians** — cars drive the road network, stop for each
-  other and brake for you; pedestrians stroll the sidewalks and flee gunfire.
+  other and brake for you; pedestrians stroll the sidewalks, flee gunfire and
+  speeding cars, and panic spreads through a crowd.
 - **Cars to steal and drive** — walk up to any parked or stopped car and
-  press `E`. Arcade handling with a handbrake, damage and wrecks.
+  press `E`. Three classes with distinct handling: quick **sport** cars, the
+  all-round **sedan**, and slow but sturdy **vans**. Arcade handling with a
+  handbrake, damage and wrecks.
+- **Jump and pickups** — press `Space` on foot to jump; health, ammo and car
+  repair pickups are scattered around the city and respawn after a while.
 - **A wanted level with police who respond** — steal, shoot or run someone
-  over and the Coral Bay PD comes after you with flashing light bars, rams
-  your car, and busts you on foot if they stay close. Lay low and the heat
-  cools off.
-- **Missions and a story** — three story jobs (First Wheels, The Drop, Heat
-  Run), plus repeatable taxi fares and ten hidden stash packages that pay cash.
+  over and the Coral Bay PD comes after you with wig-wag light bars that
+  strobe faster at higher wanted levels, rams your car, and busts you on foot
+  if they stay close. Lay low and the heat cools off.
+- **Missions and a story** — five story jobs (First Wheels, The Drop, Heat
+  Run, The Vault, King of Coral Bay), plus repeatable taxi fares, timed
+  courier deliveries and ten hidden stash packages that pay cash.
 - **Combat** — a pistol with tracers, muzzle flash, reloads and panicking crowds.
-- **A HUD with a minimap** — cash, health, wanted stars, speed, objectives,
-  a live minimap with police and mission markers, banners and toasts.
+- **A HUD with a minimap** — cash, health, wanted stars, a speedometer with
+  a speed bar and car-class badge, a mission-objective tracker that ticks
+  steps off as you finish them, a live minimap with police and mission
+  markers, banners and toasts.
 - **Start screen and saving** — continue or start a new game; cash, missions
   and stashes save in the browser.
 - **Sound** — synthesised WebAudio: engine hum, sirens, gunshots, a bass groove.
@@ -53,7 +61,7 @@ No build step, no network requests: every file the game loads lives under
 | Click | Fire pistol (on foot) |
 | E | Steal / enter / exit car |
 | Shift | Run |
-| Space | Handbrake |
+| Space | Jump (on foot) / Handbrake (in car) |
 | R | Reload |
 | P / Esc | Pause |
 | M | Mute |
@@ -62,14 +70,14 @@ No build step, no network requests: every file the game loads lives under
 
 - `game/index.html` — page, HUD and menus
 - `game/vendor/three.min.js` — three.js r149 (vendored, minified)
-- `game/src/config.js` — tuning, colours, seeded RNG
-- `game/src/city.js` — the procedural city, beach and road graph
-- `game/src/vehicles.js` — car models and traffic
+- `game/src/config.js` — tuning, colours, car classes, seeded RNG
+- `game/src/city.js` — the procedural city, neon strip, beach and road graph
+- `game/src/vehicles.js` — car models, classes and traffic
 - `game/src/people.js` — pedestrians
 - `game/src/police.js` — wanted system and police AI
-- `game/src/missions.js` — story missions, taxi fares, stashes
-- `game/src/hud.js` — HUD, minimap, menus
-- `game/src/player.js` — Dario: walking, driving, camera, combat
+- `game/src/missions.js` — story missions, taxi fares, courier runs, stashes
+- `game/src/hud.js` — HUD, speedometer, mission tracker, minimap, menus
+- `game/src/player.js` — Dario: walking, jumping, driving, camera, combat, pickups
 - `game/src/audio.js` — synthesised WebAudio sound
 - `game/src/main.js` — boot, fixed-step loop, save/load, screenshots
 - `main.ts` — the entry program: copies `game/` and `screenshots/` to

@@ -54,8 +54,12 @@
     runSpeed: 10,
     playerRadius: 0.55,
     playerHealth: 100,
+    jumpVelocity: 8.5,   // Space on foot: vertical launch speed
+    gravity: 22,         // pulls the player back down after a jump
+    jumpCooldown: 0.25,  // seconds between jumps
 
-    // Driving (arcade).
+    // Driving (arcade). The per-class table below overrides these defaults;
+    // the numbers here are the sedan's, kept as the fallback.
     carAccel: 26,
     carBrake: 42,
     carReverse: 14,
@@ -66,6 +70,16 @@
     handbrakeGrip: 1.6,
     carRadius: 1.6,
     carHealth: 100,
+
+    // Car classes: sport is quick and twitchy, sedan is the all-rounder,
+    // van is slow but sturdy. Traffic and parked cars roll a class; the
+    // player's handling follows the car they stole.
+    carClasses: {
+      sport: { topSpeed: 54, accel: 36, steer: 0.66, grip: 7.6, reverse: 13, label: 'SPORT' },
+      sedan: { topSpeed: 42, accel: 26, steer: 0.55, grip: 6.5, reverse: 12, label: 'SEDAN' },
+      van:   { topSpeed: 33, accel: 19, steer: 0.46, grip: 5.4, reverse: 11, label: 'VAN' },
+    },
+    carClassWeights: { sport: 0.25, sedan: 0.55, van: 0.2 },
 
     // Traffic and pedestrians.
     trafficCount: 14,
@@ -91,10 +105,22 @@
     reloadTime: 1.2,
 
     // Missions and money.
-    missionRewards: [300, 500, 800],
+    missionRewards: [300, 500, 800, 1000, 1200],
     taxiFare: [40, 80],
     stashReward: 100,
     stashCount: 10,
+    // Courier runs: repeatable timed deliveries, unlocked after mission 2.
+    courierFare: [120, 220],
+    courierTime: 90,      // seconds to reach the drop-off once the parcel is aboard
+    courierCooldown: 20,  // seconds between courier offers
+
+    // Pickups scattered around the city: health, ammo and car repair.
+    // Each type respawns a while after being taken.
+    pickupCounts: { health: 6, ammo: 6, repair: 5 },
+    pickupRespawn: 45,    // seconds before a taken pickup comes back
+    healthPickupAmount: 40,
+    ammoPickupAmount: 12, // refills the pistol magazine
+    repairPickupAmount: 50,
 
     // Camera.
     camDistCar: 10.5,

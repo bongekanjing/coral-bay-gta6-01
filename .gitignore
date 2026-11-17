@@ -4,3 +4,9 @@ NOTES.md
 out/
 *.log
 .DS_Store
+# The coordinator's submission bundle (rebuilt from the repo on demand).
+bundle.tar.gz
+# Editor and OS leftovers.
+*.orig
+*.swp
+Thumbs.db

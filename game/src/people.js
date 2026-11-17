@@ -132,9 +132,23 @@
         if (danger) {
           const d = Math.hypot(ped.x - danger.x, ped.z - danger.z);
           if (d < danger.radius) {
+            // Gunfire sends peds running; a speeding car does too, closer in.
             ped.state = 'flee';
-            ped.panicTimer = 3;
+            ped.panicTimer = danger.kind === 'shot' ? 4 : 2.5;
             ped.fleeFrom = { x: danger.x, z: danger.z };
+            ped.fleeSpeed = 3.2 + rng() * 1.4;
+          }
+        }
+        // Chain panic: a fleeing ped spooks the people right next to them.
+        if (ped.state === 'flee') {
+          for (const other of this.peds) {
+            if (other === ped || other.state !== 'walk') continue;
+            if (Math.hypot(other.x - ped.x, other.z - ped.z) < 9) {
+              other.state = 'flee';
+              other.panicTimer = 3;
+              other.fleeFrom = ped.fleeFrom;
+              other.fleeSpeed = 3.2 + rng() * 1.4;
+            }
           }
         }
         if (ped.state === 'flee') {
@@ -146,8 +160,8 @@
           while (dh > Math.PI) dh -= Math.PI * 2;
           while (dh < -Math.PI) dh += Math.PI * 2;
           ped.heading += CB.clamp(dh, -4 * dt, 4 * dt);
-          ped.x += Math.sin(ped.heading) * 3.4 * dt;
-          ped.z += Math.cos(ped.heading) * 3.4 * dt;
+          ped.x += Math.sin(ped.heading) * (ped.fleeSpeed || 3.4) * dt;
+          ped.z += Math.cos(ped.heading) * (ped.fleeSpeed || 3.4) * dt;
           ped.phase += dt * 9;
           animateWalk(ped.mesh, ped.phase, 1);
           if (ped.panicTimer <= 0) ped.state = 'walk';

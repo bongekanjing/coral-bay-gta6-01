@@ -27,6 +27,12 @@
       this.rng = rng;
       this.cops = [];
       this.wanted = 0;
+      // One shared glow light that hovers over the nearest cop car and
+      // alternates red/blue with the light bars, so a chase reads at night
+      // and at golden hour alike.
+      this.sirenLight = new THREE.PointLight(0xff2222, 0, 42);
+      this.sirenLight.position.set(0, 4, 0);
+      scene.add(this.sirenLight);
     },
 
     setWanted: function (n) {
@@ -123,10 +129,14 @@
         cop.mesh.position.set(cop.x, 0, cop.z);
         cop.mesh.rotation.y = cop.heading;
         for (const w of cop.mesh.userData.wheels) w.rotation.x += cop.speed * dt * 2.4;
-        // Flashing light bar.
-        const on = Math.sin(this.flashT * 10) > 0;
-        cop.mesh.userData.lightRed.material.emissive.setHex(on ? 0xff0000 : 0x220000);
-        cop.mesh.userData.lightBlue.material.emissive.setHex(on ? 0x000022 : 0x0022ff);
+        // Flashing light bar: a proper wig-wag — red on, both off, blue on,
+        // both off — speeding up as the wanted level climbs, so 5 stars
+        // strobe visibly faster than 1. The glow light matches the bar.
+        const cycle = (this.flashT * (7 + this.wanted * 2.5)) % 1;
+        const redOn = cycle < 0.4;
+        const blueOn = cycle >= 0.5 && cycle < 0.9;
+        cop.mesh.userData.lightRed.material.emissive.setHex(redOn ? 0xff0000 : 0x220000);
+        cop.mesh.userData.lightBlue.material.emissive.setHex(blueOn ? 0x0022ff : 0x000022);
         // Ramming the player.
         if (dist < 3.4) {
           if (player.inCar) {
@@ -174,6 +184,20 @@
 
       // Siren when a cop is close.
       CB.AudioSys.sirenSet(this.wanted > 0 && this.nearestCopDist < 90);
+      // The glow light follows the nearest cop and matches the bar's colour.
+      if (this.cops.length && this.wanted > 0) {
+        let near = this.cops[0], nd = Infinity;
+        for (const cop of this.cops) {
+          const d = Math.hypot(cop.x - player.x, cop.z - player.z);
+          if (d < nd) { nd = d; near = cop; }
+        }
+        const cycle = (this.flashT * (7 + this.wanted * 2.5)) % 1;
+        this.sirenLight.position.set(near.x, 3.2, near.z);
+        this.sirenLight.color.setHex(cycle < 0.4 ? 0xff2222 : cycle < 0.9 ? 0x2266ff : 0xff2222);
+        this.sirenLight.intensity = (cycle < 0.4 || (cycle >= 0.5 && cycle < 0.9)) ? 1.4 : 0;
+      } else {
+        this.sirenLight.intensity = 0;
+      }
     },
 
     clearAll: function () {

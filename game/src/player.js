@@ -11,6 +11,10 @@
 
   const Player = {
     x: 36, z: 44,
+    y: 0,               // height above the ground (jumping)
+    vy: 0,
+    grounded: true,
+    jumpTimer: 0,
     heading: 0,
     footSpeed: 0,
     health: CFG.playerHealth,
@@ -50,6 +54,7 @@
 
     reset: function (x, z, heading) {
       this.x = x; this.z = z; this.heading = heading || 0;
+      this.y = 0; this.vy = 0; this.grounded = true; this.jumpTimer = 0;
       this.health = CFG.playerHealth;
       this.inCar = false;
       this.car = null;
@@ -71,7 +76,9 @@
       } else {
         c.stolen = true;
       }
-      this.car = { mesh: c.mesh, x: c.x, z: c.z, heading: c.heading, speed: 0, health: c.health || CFG.carHealth, wrecked: false, source: c, wasTraffic: found.isTraffic };
+      this.car = { mesh: c.mesh, x: c.x, z: c.z, heading: c.heading, speed: 0, health: c.health || CFG.carHealth, wrecked: false, source: c, wasTraffic: found.isTraffic,
+        carClass: c.carClass || c.mesh.userData.carClass || 'sedan',
+        stats: CB.Vehicles.classStats(c.carClass || c.mesh.userData.carClass || 'sedan') };
       this.inCar = true;
       this.carSpeed = 0;
       this.carHealth = this.car.health;
@@ -93,7 +100,7 @@
       // The car stays where it stopped and can be stolen again — unless wrecked.
       const car = this.car;
       if (car.wasTraffic) {
-        CB.Vehicles.parked.push({ mesh: car.mesh, x: car.x, z: car.z, heading: car.heading, stolen: false, wrecked: car.wrecked });
+        CB.Vehicles.parked.push({ mesh: car.mesh, x: car.x, z: car.z, heading: car.heading, stolen: false, wrecked: car.wrecked, carClass: car.carClass || 'sedan' });
       } else {
         car.source.stolen = false;
         car.source.wrecked = car.wrecked;
@@ -109,22 +116,23 @@
 
     updateDriving: function (dt, input) {
       const car = this.car;
+      const st = car.stats || CFG.carClasses.sedan; // this car's class numbers
       const fwd = (input.w ? 1 : 0) - (input.s ? 1 : 0);
       const steerIn = (input.a ? 1 : 0) - (input.d ? 1 : 0);
       const handbrake = input.space;
       // Acceleration.
-      if (fwd > 0) car.speed += CFG.carAccel * dt * (1 - car.speed / CFG.carTopSpeed);
+      if (fwd > 0) car.speed += st.accel * dt * (1 - car.speed / st.topSpeed);
       else if (fwd < 0) {
         if (car.speed > 0.5) car.speed -= CFG.carBrake * dt;
-        else car.speed -= CFG.carReverse * dt;
+        else car.speed -= st.reverse * dt;
       } else {
         car.speed -= car.speed * 1.2 * dt; // rolling drag
       }
-      car.speed = CB.clamp(car.speed, -CFG.carTopReverse, CFG.carTopSpeed);
+      car.speed = CB.clamp(car.speed, -st.reverse, st.topSpeed);
       // Steering: less at speed, more with the handbrake.
       const steerScale = CB.clamp(Math.abs(car.speed) / 10, 0.25, 1);
-      const grip = handbrake ? CFG.handbrakeGrip : CFG.carGrip;
-      const yawRate = steerIn * CFG.carSteer * steerScale * (handbrake ? 1.7 : 1) *
+      const grip = handbrake ? CFG.handbrakeGrip : st.grip;
+      const yawRate = steerIn * st.steer * steerScale * (handbrake ? 1.7 : 1) *
         (car.speed >= 0 ? 1 : -1);
       car.heading += yawRate * dt * Math.min(1, Math.abs(car.speed) / 6 + 0.2);
       // Move.
@@ -186,13 +194,34 @@
           w.rotation.y = steerIn * 0.35;
         }
       }
-      CB.AudioSys.engineSet(Math.abs(car.speed) / CFG.carTopSpeed, true);
+      CB.AudioSys.engineSet(Math.abs(car.speed) / st.topSpeed, true);
     },
 
     // ---- on foot -----------------------------------------------------------
     updateOnFoot: function (dt, input, camera) {
       const run = input.shift;
       const speed = run ? CFG.runSpeed : CFG.walkSpeed;
+      // Jump (Space, on foot): rising edge only, so holding Space does not
+      // bunny-hop. Gravity pulls back down; landing on the ground resets.
+      this.jumpTimer -= dt;
+      const jumpPressed = input.space && !this._spaceDown;
+      this._spaceDown = input.space;
+      if (jumpPressed && this.grounded && this.jumpTimer <= 0) {
+        this.vy = CFG.jumpVelocity;
+        this.grounded = false;
+        this.jumpTimer = CFG.jumpCooldown;
+        CB.AudioSys.jump();
+      }
+      if (!this.grounded) {
+        this.vy -= CFG.gravity * dt;
+        this.y += this.vy * dt;
+        if (this.y <= 0) {
+          this.y = 0;
+          this.vy = 0;
+          this.grounded = true;
+          CB.AudioSys.land();
+        }
+      }
       // Movement relative to the camera yaw.
       const camYaw = this.camYaw + this.heading;
       let mx = 0, mz = 0;
@@ -217,7 +246,7 @@
       CB.Vehicles.collideBuildings(CB.Game.city, probe, CFG.playerRadius);
       CB.Vehicles.clampToBounds(probe, CFG.playerRadius);
       this.x = probe.x; this.z = probe.z;
-      this.mesh.position.set(this.x, 0, this.z);
+      this.mesh.position.set(this.x, this.y, this.z);
       this.mesh.rotation.y = this.heading;
       // Firing the pistol.
       this.fireTimer -= dt;
@@ -321,9 +350,114 @@
       camera.position.x += (cx - camera.position.x) * Math.min(1, dt * 7);
       camera.position.y += (cy - camera.position.y) * Math.min(1, dt * 7);
       camera.position.z += (cz - camera.position.z) * Math.min(1, dt * 7);
-      camera.lookAt(this.x, this.inCar ? 1.4 : 1.5, this.z);
+      camera.lookAt(this.x, (this.inCar ? 1.4 : 1.5) + this.y, this.z);
     },
   };
 
+  // ---- pickups -----------------------------------------------------------
+  // Health, ammo and car-repair pickups scattered around the city. Each is a
+  // small glowing marker that spins and bobs; walk or drive over one to take
+  // it, and it comes back after CFG.pickupRespawn seconds.
+  const Pickups = {
+    list: [],
+    scene: null,
+
+    makeMesh: function (kind) {
+      const g = new THREE.Group();
+      if (kind === 'health') {
+        const white = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x888888 });
+        const green = new THREE.MeshLambertMaterial({ color: 0x2ecc71, emissive: 0x1e8449 });
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.3), white);
+        g.add(box);
+        const v = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.66, 0.34), green);
+        g.add(v);
+        const h = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.22, 0.34), green);
+        g.add(h);
+      } else if (kind === 'ammo') {
+        const mat = new THREE.MeshLambertMaterial({ color: 0xf1c40f, emissive: 0x7d6608 });
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.5), mat);
+        g.add(box);
+        for (let i = -1; i <= 1; i++) {
+          const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 6),
+            new THREE.MeshLambertMaterial({ color: 0xd4ac0d, emissive: 0x7d6608 }));
+          tip.position.set(i * 0.22, 0.48, 0);
+          g.add(tip);
+        }
+      } else { // repair
+        const mat = new THREE.MeshLambertMaterial({ color: 0xe67e22, emissive: 0x935116 });
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.3), mat);
+        g.add(box);
+        const wrench = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.9, 0.34),
+          new THREE.MeshLambertMaterial({ color: 0xeeeeee, emissive: 0x555555 }));
+        wrench.rotation.z = 0.6;
+        g.add(wrench);
+      }
+      return g;
+    },
+
+    init: function (scene, city, rng) {
+      this.scene = scene;
+      this.list = [];
+      const kinds = ['health', 'ammo', 'repair'];
+      for (const kind of kinds) {
+        for (let k = 0; k < CFG.pickupCounts[kind]; k++) {
+          const spot = city.sidewalkSpots[Math.floor(rng() * city.sidewalkSpots.length)];
+          const mesh = this.makeMesh(kind);
+          mesh.position.set(spot.x, 1.1, spot.z);
+          scene.add(mesh);
+          this.list.push({ kind: kind, mesh: mesh, x: spot.x, z: spot.z,
+            taken: false, respawn: 0, phase: rng() * Math.PI * 2 });
+        }
+      }
+    },
+
+    reset: function () {
+      for (const p of this.list) {
+        p.taken = false;
+        p.respawn = 0;
+        p.mesh.visible = true;
+      }
+    },
+
+    update: function (dt, player) {
+      for (const p of this.list) {
+        if (p.taken) {
+          p.respawn -= dt;
+          if (p.respawn <= 0) {
+            p.taken = false;
+            p.mesh.visible = true;
+          }
+          continue;
+        }
+        // Spin and bob so the pickup reads at a glance.
+        p.phase += dt * 2;
+        p.mesh.rotation.y += dt * 1.8;
+        p.mesh.position.y = 1.1 + Math.sin(p.phase) * 0.15;
+        const d = Math.hypot(player.x - p.x, player.z - p.z);
+        if (d > 2.4) continue;
+        if (p.kind === 'health') {
+          if (player.inCar || player.health >= CFG.playerHealth) continue;
+          player.health = Math.min(CFG.playerHealth, player.health + CFG.healthPickupAmount);
+          CB.HUD.flashObjective('Health + ' + CFG.healthPickupAmount);
+        } else if (p.kind === 'ammo') {
+          if (player.inCar || player.ammo >= CFG.pistolMag) continue;
+          player.ammo = CFG.pistolMag;
+          player.reloading = false;
+          CB.HUD.flashObjective('Ammo refilled (+' + CFG.ammoPickupAmount + ')');
+        } else { // repair
+          if (!player.inCar || !player.car || player.carHealth >= CFG.carHealth) continue;
+          player.car.health = Math.min(CFG.carHealth, player.car.health + CFG.repairPickupAmount);
+          player.carHealth = player.car.health;
+          CB.HUD.flashObjective('Car repaired +' + CFG.repairPickupAmount);
+        }
+        p.taken = true;
+        p.respawn = CFG.pickupRespawn;
+        p.mesh.visible = false;
+        CB.AudioSys.pickupChime();
+      }
+    },
+  };
+
+  CB.Pickups = Pickups;
   CB.Player = Player;
 })();

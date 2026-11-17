@@ -15,6 +15,7 @@
     mctx: null,
     bannerTimer: null,
     toastTimer: null,
+    trackerKey: '',
 
     init: function () {
       this.minimap = el('minimap');
@@ -69,13 +70,20 @@
       for (let i = 0; i < CFG.maxWanted; i++) stars += i < CB.Police.wanted ? '★' : '☆';
       el('stars').textContent = stars;
       el('stars').style.color = CB.Police.wanted > 0 ? '#ffd21a' : 'rgba(255,255,255,0.35)';
-      // Speed.
+      // Speedometer: big readout, class badge, and a bar that fills with speed.
       const kmh = Math.round(Math.abs(player.inCar ? player.carSpeed : player.footSpeed) * 3.6);
       el('speed').textContent = player.inCar ? kmh + ' km/h' : '';
       el('speed-label').textContent = player.inCar ? 'SPEED' : '';
+      const top = player.inCar && player.car && player.car.stats ? player.car.stats.topSpeed : 1;
+      el('speed-fill').style.width = player.inCar ?
+        Math.round(Math.min(100, Math.abs(player.carSpeed) / top * 100)) + '%' : '0%';
+      el('speed-class').textContent = player.inCar && player.car && player.car.stats ?
+        player.car.stats.label + ' · ' + Math.round(top * 3.6) + ' TOP' : '';
+      // Objective tracker panel: mission steps with done/current marks.
+      this.updateTracker();
       // Objective and timers.
       el('objective').textContent = CB.Missions.objectiveText;
-      const timer = CB.Missions.missionTimerText() || CB.Missions.taxiTimerText();
+      const timer = CB.Missions.missionTimerText() || CB.Missions.taxiTimerText() || CB.Missions.courierTimerText();
       el('timer').textContent = timer;
       el('timer').style.display = timer ? 'block' : 'none';
       // Crosshair only on foot with the pistol out.
@@ -84,6 +92,25 @@
       el('damage').style.opacity = player.health < 100 ?
         String((1 - player.health / 100) * 0.55) : '0';
       this.drawMinimap(player);
+    },
+
+    // Mission-objective tracker: rebuilds only when the steps change.
+    updateTracker: function () {
+      const data = CB.Missions.trackerData();
+      const key = data.title + '|' + data.steps.map(function (s) {
+        return (s.done ? '1' : '0') + (s.current ? '1' : '0') + s.text;
+      }).join('|');
+      if (key === this.trackerKey) return;
+      this.trackerKey = key;
+      el('tracker-title').textContent = data.title;
+      const box = el('tracker-steps');
+      box.innerHTML = '';
+      for (const s of data.steps) {
+        const row = document.createElement('div');
+        row.className = 'tracker-step' + (s.done ? ' done' : '') + (s.current ? ' current' : '');
+        row.textContent = (s.done ? '✓ ' : s.current ? '▸ ' : '· ') + s.text;
+        box.appendChild(row);
+      }
     },
 
     drawMinimap: function (player) {

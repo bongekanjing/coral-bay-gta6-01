@@ -19,7 +19,9 @@
   }
 
   // Facade texture: warm wall colour with a grid of windows, some lit.
-  function facadeTexture(rng, base) {
+  // litRatio is higher downtown, so the towers glow at golden hour.
+  function facadeTexture(rng, base, litRatio) {
+    const lit = litRatio === undefined ? 0.28 : litRatio;
     return makeCanvas(128, 256, function (g, w, h) {
       g.fillStyle = base; g.fillRect(0, 0, w, h);
       g.fillStyle = 'rgba(0,0,0,0.12)';
@@ -28,13 +30,34 @@
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           const x = 8 + c * 24, y = 10 + r * 22;
-          const lit = rng() < 0.28;
-          g.fillStyle = lit ? '#ffd98a' : 'rgba(20,30,44,0.85)';
+          const isLit = rng() < lit;
+          g.fillStyle = isLit ? '#ffd98a' : 'rgba(20,30,44,0.85)';
           g.fillRect(x, y, 16, 13);
           g.fillStyle = 'rgba(255,255,255,0.18)';
           g.fillRect(x, y, 16, 3);
         }
       }
+    });
+  }
+
+  // A neon sign texture: glowing letters on a dark board, drawn on canvas.
+  function neonSignTexture(text, color) {
+    return makeCanvas(256, 64, function (g, w, h) {
+      g.fillStyle = '#101018';
+      g.fillRect(0, 0, w, h);
+      g.strokeStyle = color;
+      g.lineWidth = 3;
+      g.strokeRect(4, 4, w - 8, h - 8);
+      g.font = 'bold 34px Arial, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.shadowColor = color;
+      g.shadowBlur = 18;
+      g.fillStyle = color;
+      g.fillText(text, w / 2, h / 2 + 1);
+      g.shadowBlur = 0;
+      g.fillStyle = '#ffffff';
+      g.fillText(text, w / 2, h / 2 + 1);
     });
   }
 
@@ -97,16 +120,17 @@
   }
 
   // Two meshes only (trunk + crown) so dozens of palms stay cheap to draw.
-  function palmTree(rng) {
+  // Short palms are bushier and squatter, for planters and the park edge.
+  function palmTree(rng, short) {
     const g = new THREE.Group();
-    const trunkH = CB.range(rng, 5, 7);
+    const trunkH = short ? CB.range(rng, 2.6, 3.6) : CB.range(rng, 5, 7);
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.18, 0.32, trunkH, 6),
       new THREE.MeshLambertMaterial({ color: 0x8a6a4a }));
     trunk.position.y = trunkH / 2;
     trunk.rotation.z = CB.range(rng, -0.12, 0.12);
     g.add(trunk);
-    const crown = new THREE.Mesh(new THREE.SphereGeometry(1.9, 8, 5),
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(short ? 2.4 : 1.9, 8, 5),
       new THREE.MeshLambertMaterial({ color: 0x2f9e4f }));
     crown.scale.y = 0.45;
     crown.position.y = trunkH + 0.3;
@@ -148,6 +172,8 @@
           safehouse: { x: 204, z: 204 },
           hospital: { x: 204, z: -204 },
           policeStation: { x: -204, z: -204 },
+          bank: { x: -132, z: -132 },
+          bankVault: { x: -120, z: -126 },
           park: { x: -144, z: -36 },
         },
       };
@@ -201,10 +227,16 @@
       scene.add(clouds);
 
       // Buildings, block by block. The centre block is the plaza; (-2,1) is a park.
+      // Downtown towers (near the centre) get the brighter, more-lit facades.
       const facades = CFG.buildingPalette.map(function (c) {
         return facadeTexture(rng, '#' + c.toString(16).padStart(6, '0'));
       });
+      const downtownFacades = CFG.buildingPalette.map(function (c) {
+        return facadeTexture(rng, '#' + c.toString(16).padStart(6, '0'), 0.55);
+      });
       const roofMat = new THREE.MeshLambertMaterial({ color: 0x5a5148 });
+      const acMat = new THREE.MeshLambertMaterial({ color: 0x9aa0a3 });
+      const tankMat = new THREE.MeshLambertMaterial({ color: 0x7a5a38 });
       const plazaBlock = { i: 0, j: 0 };
       const parkBlock = { i: -2, j: 1 };
       for (let i = -3; i < 3; i++) {
@@ -226,7 +258,7 @@
             const w = bw * s[2], d = bw * s[2];
             const hgt = tall ? CB.range(rng, 26, 68) : CB.range(rng, 9, 30);
             const cx = x0 + bw * s[0], cz = z0 + bw * s[1];
-            const mat = new THREE.MeshLambertMaterial({ map: CB.pick(rng, facades) });
+            const mat = new THREE.MeshLambertMaterial({ map: CB.pick(rng, tall ? downtownFacades : facades) });
             const b = new THREE.Mesh(new THREE.BoxGeometry(w, hgt, d),
               [mat, mat, roofMat, roofMat, mat, mat]);
             b.position.set(cx, hgt / 2, cz);
@@ -237,6 +269,22 @@
               const rb = new THREE.Mesh(new THREE.BoxGeometry(w * 0.3, 2.5, d * 0.3), roofMat);
               rb.position.set(cx + w * 0.15, hgt + 1.2, cz - d * 0.1);
               scene.add(rb);
+            }
+            // Rooftop props: AC units on most roofs, a water tower on tall ones.
+            const nAc = 1 + Math.floor(rng() * 3);
+            for (let a = 0; a < nAc; a++) {
+              const ac = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 1.6), acMat);
+              ac.position.set(cx + CB.range(rng, -w / 3, w / 3), hgt + 0.55, cz + CB.range(rng, -d / 3, d / 3));
+              ac.rotation.y = rng() * Math.PI;
+              scene.add(ac);
+            }
+            if (tall && rng() < 0.45) {
+              const tank = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 4, 10), tankMat);
+              tank.position.set(cx - w * 0.28, hgt + 3.4, cz + d * 0.25);
+              scene.add(tank);
+              const cap = new THREE.Mesh(new THREE.ConeGeometry(2.4, 1.6, 10), roofMat);
+              cap.position.set(cx - w * 0.28, hgt + 6.2, cz + d * 0.25);
+              scene.add(cap);
             }
           }
         }
@@ -249,6 +297,18 @@
       hotel.position.set(132, 29, 246);
       scene.add(hotel);
       city.colliders.push({ minX: 115, maxX: 149, minZ: 233, maxZ: 259 });
+      // Hotel rooftop: AC units and a glowing sign band.
+      for (const ax of [122, 132, 142]) {
+        const ac = new THREE.Mesh(new THREE.BoxGeometry(3, 1.4, 2.2),
+          new THREE.MeshLambertMaterial({ color: 0x9aa0a3 }));
+        ac.position.set(ax, 58.7, 244);
+        scene.add(ac);
+      }
+      const hotelSign = new THREE.Mesh(new THREE.PlaneGeometry(22, 4),
+        new THREE.MeshBasicMaterial({ map: neonSignTexture('CORAL HOTEL', '#29e6ff') }));
+      hotelSign.position.set(132, 52, 232.8);
+      hotelSign.rotation.y = Math.PI;
+      scene.add(hotelSign);
 
       // Pier planks out over the water at Marco's spot.
       const pier = new THREE.Mesh(
@@ -297,6 +357,35 @@
         scene.add(p);
       }
 
+      // Planters along the sidewalks: a concrete box with a bush, and every
+      // third one a short palm instead, for variety down the avenues.
+      const planterMat = new THREE.MeshLambertMaterial({ color: 0x8a8578 });
+      const bushMat = new THREE.MeshLambertMaterial({ color: 0x3f8f3a });
+      const bushMat2 = new THREE.MeshLambertMaterial({ color: 0x6fae4e });
+      for (let k = 0; k < 18; k++) {
+        const horizontal = rng() < 0.5;
+        const street = Math.floor(CB.range(rng, -3, 4)) * CFG.pitch;
+        const along = CB.range(rng, -200, 200);
+        const off = (rng() < 0.5 ? -1 : 1) * (CFG.streetHalf + 2.2); // on the sidewalk
+        const px = horizontal ? along : street + off;
+        const pz = horizontal ? street + off : along;
+        if (k % 3 === 2) {
+          const p = palmTree(rng, true);
+          p.position.set(px, 0, pz);
+          scene.add(p);
+        } else {
+          const box = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.7, 1.1), planterMat);
+          box.position.set(px, 0.35, pz);
+          box.rotation.y = horizontal ? 0 : Math.PI / 2;
+          scene.add(box);
+          const bush = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6),
+            k % 2 === 0 ? bushMat : bushMat2);
+          bush.scale.y = 0.6;
+          bush.position.set(px, 0.9, pz);
+          scene.add(bush);
+        }
+      }
+
       // Streetlights at intersections, two instanced meshes (poles + lamps).
       const poleSpots = [];
       for (let i = -3; i <= 3; i++) {
@@ -314,6 +403,32 @@
         new THREE.MeshLambertMaterial({ color: 0xffe9a8, emissive: 0xffdf8a }), poleSpots.length),
         poleSpots.map(function (p) { return { x: p.x, y: 7.1, z: p.z }; }));
       scene.add(lamps);
+
+      // Neon downtown strip: glowing signs on poles along the east-west
+      // avenue through the centre (z = 0), so the drive downtown reads at
+      // golden hour. A few coloured point lights sell the glow.
+      const neonWords = ['CORAL', 'PIER 24', 'HOTEL', 'TACOS', 'CLUB NEON', '24H', 'DINE', 'SURF', 'BAR', 'CASINO'];
+      const neonColors = ['#ff4fa3', '#29e6ff', '#a8ff3e', '#ff9f1c', '#c77dff', '#ff5a4e'];
+      const poleMat = new THREE.MeshLambertMaterial({ color: 0x2c3e50 });
+      for (let k = 0; k < 10; k++) {
+        const x = -162 + k * 36;
+        const side = k % 2 === 0 ? 1 : -1;
+        const color = neonColors[k % neonColors.length];
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 6.5, 6), poleMat);
+        pole.position.set(x, 3.25, side * 9.6);
+        scene.add(pole);
+        const sign = new THREE.Mesh(new THREE.PlaneGeometry(11, 2.75),
+          new THREE.MeshBasicMaterial({ map: neonSignTexture(neonWords[k], color) }));
+        sign.position.set(x, 5.6, side * 9.6 + (side > 0 ? -0.35 : 0.35));
+        if (side > 0) sign.rotation.y = Math.PI; // face the street
+        scene.add(sign);
+      }
+      const neonLights = [[-72, 0xff4fa3], [0, 0x29e6ff], [72, 0xff9f1c]];
+      for (const nl of neonLights) {
+        const pl = new THREE.PointLight(nl[1], 0.9, 55);
+        pl.position.set(nl[0], 6, 0);
+        scene.add(pl);
+      }
 
       // Road graph: intersections and neighbours for traffic. Neighbours are
       // references to the same node objects, so a car can keep walking the

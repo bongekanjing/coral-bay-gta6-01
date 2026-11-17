@@ -32,9 +32,21 @@
     padding: 9px 18px; text-align: center; max-width: 46%; }
   #objective { font-size: 15px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,0.7); }
   #timer { font-size: 22px; font-weight: 800; color: #ffd21a; margin-top: 2px; display: none; }
+  /* Mission-objective tracker: the job and its steps, ticked off as you go. */
+  #tracker { position: absolute; top: 150px; left: 14px; padding: 10px 12px; width: 248px; }
+  #tracker-title { font-size: 12px; font-weight: 800; letter-spacing: 2px; color: #ffc21a;
+    margin-bottom: 5px; }
+  .tracker-step { font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.75); }
+  .tracker-step.current { color: #fff; font-weight: 700; }
+  .tracker-step.done { color: rgba(255,255,255,0.45); text-decoration: line-through; }
   #speedbox { position: absolute; right: 16px; bottom: 16px; text-align: right; }
   #speed { font-size: 34px; font-weight: 800; text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
   #speed-label { font-size: 11px; letter-spacing: 3px; color: rgba(255,255,255,0.8); }
+  #speedbar { width: 190px; height: 7px; background: rgba(255,255,255,0.22); border-radius: 4px;
+    margin-top: 6px; margin-left: auto; overflow: hidden; }
+  #speed-fill { height: 100%; width: 0%; background: #ffc21a; border-radius: 4px;
+    transition: width 0.12s linear; }
+  #speed-class { font-size: 11px; letter-spacing: 2px; color: rgba(255,255,255,0.85); margin-top: 4px; }
   #crosshair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px;
     margin: -11px 0 0 -11px; display: none; }
   #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff;
@@ -99,9 +111,15 @@
     <div id="objective"></div>
     <div id="timer"></div>
   </div>
+  <div id="tracker" class="panel">
+    <div id="tracker-title"></div>
+    <div id="tracker-steps"></div>
+  </div>
   <div id="speedbox">
     <div id="speed"></div>
     <div id="speed-label"></div>
+    <div id="speedbar"><div id="speed-fill"></div></div>
+    <div id="speed-class"></div>
   </div>
   <div id="crosshair"></div>
   <div id="interact" class="panel"></div>
@@ -118,7 +136,7 @@
   <h1>CORAL BAY</h1>
   <h2>AN OPEN-WORLD CRIME STORY</h2>
   <p class="story">Dario Cole is back in Coral Bay with a debt to the Kroll crew and nothing
-    but the clothes on his back. Steal cars, outrun the Coral Bay PD, run three
+    but the clothes on his back. Steal cars, outrun the Coral Bay PD, run five
     jobs for Marco — and take the city back, one score at a time.</p>
   <div>
     <button id="btn-continue" class="btn">CONTINUE</button>
@@ -129,8 +147,9 @@
     <span><b>Mouse drag</b></span><span>Look around</span>
     <span><b>Click</b></span><span>Fire pistol (on foot)</span>
     <span><b>E</b></span><span>Steal / enter / exit car</span>
-    <span><b>Shift</b></span><span>Run &nbsp;·&nbsp; <b>Space</b> Handbrake</span>
+    <span><b>Shift</b></span><span>Run &nbsp;·&nbsp; <b>Space</b> Jump (on foot) / Handbrake (in car)</span>
     <span><b>R</b></span><span>Reload &nbsp;·&nbsp; <b>P</b> Pause &nbsp;·&nbsp; <b>M</b> Mute</span>
+    <span><b>Pickups</b></span><span>Green health, yellow ammo, orange car repair</span>
   </div>
   <p class="fine">Progress saves in this browser. A wholly original game — no borrowed names, art or music.</p>
 </div>

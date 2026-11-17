@@ -124,6 +124,10 @@
         for (const st of CB.Missions.stashes) { st.taken = false; st.mesh.visible = true; }
         CB.Missions.stashCollected = 0;
         CB.Missions.taxi = null;
+        CB.Missions.taxiCooldown = 12;
+        CB.Missions.courier = null;
+        CB.Missions.courierCooldown = CFG.courierCooldown;
+        CB.Pickups.reset();
         CB.Missions.startStory();
       }
     },
@@ -182,6 +186,7 @@
       this.player.init(this.scene);
       this.player.cash = this.saveData ? this.saveData.cash : 0;
       CB.Missions.init(this.scene, this.city, this.rng, this.saveData);
+      CB.Pickups.init(this.scene, this.city, this.rng);
       CB.HUD.init();
 
       this.bindInput();
@@ -302,7 +307,7 @@
         mesh.position.set(x, 0, z);
         mesh.rotation.y = heading;
         this.scene.add(mesh);
-        CB.Vehicles.parked.push({ mesh: mesh, x: x, z: z, heading: heading, stolen: false });
+        CB.Vehicles.parked.push({ mesh: mesh, x: x, z: z, heading: heading, stolen: false, carClass: 'sedan' });
         found = { car: CB.Vehicles.parked[CB.Vehicles.parked.length - 1], isTraffic: false };
       }
       p.enterCar(found);
@@ -382,12 +387,18 @@
         p.health = Math.min(CFG.playerHealth, p.health + 4 * dt);
       }
 
-      const danger = this.lastDanger;
+      // Danger for pedestrians: gunfire (set by Player.shoot) or a car
+      // speeding past — both send nearby peds running.
+      let danger = this.lastDanger;
+      if (p.inCar && Math.abs(p.carSpeed) > 12) {
+        danger = { x: p.x, z: p.z, radius: 16, kind: 'car' };
+      }
       this.lastDanger = null;
       CB.People.update(dt, this.city, this.rng, danger);
       CB.Vehicles.update(dt, this.city, this.rng, p.inCar ? { x: p.x, z: p.z } : null);
       CB.Police.update(dt, p);
       CB.Missions.update(dt, p);
+      CB.Pickups.update(dt, p);
       CB.HUD.update(p);
       if (this.shot === 'city') { /* camera already set */ }
       else p.updateCamera(dt, this.camera);
