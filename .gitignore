@@ -1,0 +1,6 @@
+# Entry hygiene: the kit download and the coordinator's working notes are never committed.
+kit-download/
+NOTES.md
+out/
+*.log
+.DS_Store
