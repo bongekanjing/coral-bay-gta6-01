@@ -49,18 +49,22 @@
         { text: 'Lose the heat and reach the safehouse', loc: 'safehouse', radius: 7 },
       ],
     },
-    {
-      id: 'm5',
-      title: 'KING OF CORAL BAY',
-      intro: 'The last job. Four stars on your tail, one getaway, and the city is yours.',
+    { id: 'm5', title: 'KING OF THE BAY',
+      intro: 'One last job. Four stars behind you, one getaway ahead — then the city is yours.',
       steps: [
-        { text: 'Meet Marco at the pier for the last job', loc: 'marcoPier', radius: 6 },
-        { text: 'Lose the heat — get your wanted level to zero', kind: 'loseHeat', setWanted: 4 },
-        { text: 'Drive the getaway car to the Coral Hotel', loc: 'hotel', radius: 7, inCar: true },
-        { text: 'Victory lap — reach the plaza', loc: 'plaza', radius: 8 },
-      ],
-    },
-  ];
+        { text: 'Marco waits at the pier for the last job', loc: 'marcoPier', radius: 6 },
+        { text: 'Shake the heat until every star is gone', kind: 'loseHeat', setWanted: 4 },
+        { text: 'Getaway drive to the Coral Hotel', loc: 'hotel', radius: 7, inCar: true },
+        { text: 'Victory lap — back to the plaza', loc: 'plaza', radius: 8 },
+      ] },
+    { id: 'm6', title: 'HARBOUR LIGHTS',
+      intro: 'A van full of cargo waits at the port. Take it, haul it to the Coral Hotel, lose the heat, and slip back to the pier.',
+      steps: [
+        { text: 'Drive out to the port on the west edge', loc: 'port', radius: 10 },
+        { text: 'Steal a van for the haul', kind: 'stealVan' },
+        { text: 'Haul the cargo to the Coral Hotel', loc: 'hotel', radius: 7, inCar: true, time: 120 },
+        { text: 'Lose the heat, then reach the pier', loc: 'marcoPier', radius: 6, kind: 'loseHeat' },
+      ] }];
 
   const Missions = {
     scene: null,
@@ -207,29 +211,33 @@
         this.beaconRing.scale.set(s, s, 1);
         this.beacon.material.opacity = 0.28 + Math.sin(CB.Game.time * 3) * 0.08;
       }
-      // Story step logic.
-      if (this.active) {
-        const m = STORY[this.index];
-        const s = m.steps[this.step];
-        if (!s) { this.active = false; return; }
-        if (s.time) {
-          this.stepTimer -= dt;
-          if (this.stepTimer <= 0) {
-            this.failMission('Out of time on ' + m.title + '.');
-            return;
-          }
+      if (this.active === true) {
+        const cur = STORY[this.index];
+        const step = cur.steps[this.step];
+        if (!step) { this.active = false; return; }
+        if (step.time) {
+          this.stepTimer = this.stepTimer - dt;
+          if (this.stepTimer <= 0) { this.failMission('Out of time — ' + cur.title + ' ran out.'); return; }
         }
-        if (s.loc) {
-          const loc = this.city.locations[s.loc];
-          const d = Math.hypot(player.x - loc.x, player.z - loc.z);
-          if (d < s.radius && (!s.inCar || player.inCar) && (!s.onFoot || !player.inCar)) this.completeStep();
-        } else if (s.kind === 'stealCar' && player.inCar && player.carStolen) {
-          this.completeStep();
-        } else if (s.kind === 'inCar' && player.inCar) {
-          this.completeStep();
-        } else if (s.kind === 'loseHeat' && CB.Police.wanted === 0) {
-          this.completeStep();
+        let done = false;
+        const kind = step.kind || '';
+        if (kind === 'stealVan') {
+          done = player.inCar && !!player.car && player.car.carClass === 'van';
+        } else if (kind === 'loseHeat' && step.loc) {
+          const lp = this.city.locations[step.loc];
+          done = CB.Police.wanted === 0 && Math.hypot(player.x - lp.x, player.z - lp.z) < step.radius;
+        } else if (step.loc) {
+          const lp = this.city.locations[step.loc];
+          const dd = Math.hypot(player.x - lp.x, player.z - lp.z);
+          done = dd < step.radius && (!step.inCar || player.inCar) && (!step.onFoot || !player.inCar);
+        } else if (kind === 'stealCar') {
+          done = player.inCar && player.carStolen;
+        } else if (kind === 'inCar') {
+          done = player.inCar;
+        } else if (kind === 'loseHeat') {
+          done = CB.Police.wanted === 0;
         }
+        if (done) this.completeStep();
       }
       // Taxi fares: a fare appears after the first mission, every so often.
       this.taxiCooldown -= dt;
@@ -414,4 +422,63 @@
   };
 
   CB.Missions = Missions;
+})();
+
+// ---- Coral Bay v3: street races --------------------------------------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+  const CFG = CB.CFG;
+
+  CB.Missions.race = null;
+  CB.Missions.raceCooldown = 20;
+  CB.Missions.raceBest = null;
+  try {
+    const saved = localStorage.getItem('coralbay-race-best');
+    if (saved) CB.Missions.raceBest = parseFloat(saved);
+  } catch (e) {}
+
+  const baseUpdate = CB.Missions.update;
+  CB.Missions.update = function (dt, player) {
+    baseUpdate.call(this, dt, player);
+    const M = CB.Missions;
+    if (M.raceCooldown > 0) M.raceCooldown -= dt;
+    if (!M.race) {
+      const g = this.city.locations.raceGate;
+      if (player.inCar && M.raceCooldown <= 0 && g &&
+        Math.hypot(player.x - g.x, player.z - g.z) < 6) {
+        M.race = { cp: 0, t: 0 };
+        CB.HUD.flashObjective('Street race! Hit all 4 checkpoints — beat 75s for a bonus.');
+        CB.AudioSys.chime();
+        const first = CFG.raceCheckpoints[0];
+        this.setMarker({ x: first[0], z: first[1] });
+      }
+      return;
+    }
+    M.race.t += dt;
+    const cp = CFG.raceCheckpoints[M.race.cp];
+    this.setMarker({ x: cp[0], z: cp[1] });
+    if (Math.hypot(player.x - cp[0], player.z - cp[1]) < 9) {
+      M.race.cp += 1;
+      CB.AudioSys.chime();
+      if (M.race.cp >= CFG.raceCheckpoints.length) {
+        const t = M.race.t;
+        const prize = CFG.racePrize + (t < CFG.raceParTime ? CFG.raceParBonus : 0);
+        CB.Game.addCash(prize);
+        if (CB.AudioSys.raceFanfare) CB.AudioSys.raceFanfare();
+        if (M.raceBest === null || t < M.raceBest) {
+          M.raceBest = Math.round(t * 10) / 10;
+          try { localStorage.setItem('coralbay-race-best', String(M.raceBest)); } catch (e) {}
+        }
+        CB.HUD.banner('RACE WON', 'Finished in ' + t.toFixed(1) + 's — +$' + prize +
+          (M.raceBest === Math.round(t * 10) / 10 ? ' · new best!' : ''));
+        M.race = null;
+        M.raceCooldown = 20;
+        if (M.active) M.applyStep();
+        else M.setMarker(null);
+      } else {
+        CB.HUD.flashObjective('Checkpoint ' + M.race.cp + '/4 — keep going!');
+      }
+    }
+  };
 })();

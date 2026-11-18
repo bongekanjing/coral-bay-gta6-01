@@ -461,3 +461,70 @@
   CB.Pickups = Pickups;
   CB.Player = Player;
 })();
+
+// ---- Coral Bay v3: player headlight beam -----------------------------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+  const THREE = window.THREE;
+
+  const baseInit = CB.Player.init;
+  CB.Player.init = function (scene) {
+    baseInit.call(this, scene);
+    this.headlightSpot = new THREE.SpotLight(0xfff2b0, 0, 46, 0.62, 0.45, 1.2);
+    this.headlightSpot.position.set(this.x, 1.4, this.z);
+    scene.add(this.headlightSpot);
+    this.headlightTarget = new THREE.Object3D();
+    this.headlightTarget.position.set(this.x, 0.5, this.z + 10);
+    scene.add(this.headlightTarget);
+    this.headlightSpot.target = this.headlightTarget;
+  };
+
+  const baseDrive = CB.Player.updateDriving;
+  CB.Player.updateDriving = function (dt, input) {
+    baseDrive.call(this, dt, input);
+    if (!this.headlightSpot) return;
+    const night = CB.Game.city && CB.Game.city.isNight;
+    if (this.inCar && this.car) {
+      const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+      this.headlightSpot.position.set(this.car.x + fx * 1.5, 1.3, this.car.z + fz * 1.5);
+      this.headlightTarget.position.set(this.car.x + fx * 26, 0.4, this.car.z + fz * 26);
+      this.headlightSpot.intensity = night ? 2.6 : 0;
+    } else {
+      this.headlightSpot.intensity = 0;
+    }
+  };
+})();
+
+// ---- Coral Bay v3 (pass 2): visible headlight beam cone --------------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+  const THREE = window.THREE;
+
+  const baseInit = CB.Player.init;
+  CB.Player.init = function (scene) {
+    baseInit.call(this, scene);
+    this.headlightCone = new THREE.Mesh(new THREE.ConeGeometry(3.1, 24, 12, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true,
+        opacity: 0.09, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.headlightCone.visible = false;
+    scene.add(this.headlightCone);
+  };
+
+  const baseDrive = CB.Player.updateDriving;
+  CB.Player.updateDriving = function (dt, input) {
+    baseDrive.call(this, dt, input);
+    if (!this.headlightCone) return;
+    const night = CB.Game.city && CB.Game.city.isNight;
+    const on = !!(night && this.inCar && this.car);
+    this.headlightCone.visible = on;
+    if (!on) return;
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    const ax = this.car.x + fx * 1.5, az = this.car.z + fz * 1.5;
+    const bx = this.car.x + fx * 24, bz = this.car.z + fz * 24;
+    this.headlightCone.position.set((ax + bx) / 2, 1.0, (az + bz) / 2);
+    this.headlightCone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(-fx, 0.02, -fz).normalize());
+  };
+})();

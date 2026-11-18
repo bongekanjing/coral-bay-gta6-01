@@ -224,3 +224,49 @@
 
   CB.AudioSys = AudioSys;
 })();
+
+// ---- Coral Bay v3: helicopter rotor loop -----------------------------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+
+  CB.AudioSys.rotorSet = function (on) {
+    if (!this.ctx) return;
+    if (!this.rotorOsc) {
+      const ctx = this.ctx;
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = 27;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      const chop = ctx.createOscillator();
+      chop.type = 'square';
+      chop.frequency.value = 11;
+      const chopGain = ctx.createGain();
+      chopGain.gain.value = 0.02;
+      chop.connect(chopGain);
+      chopGain.connect(g.gain);
+      o.connect(g);
+      g.connect(this.master);
+      o.start();
+      chop.start();
+      this.rotorOsc = o;
+      this.rotorGain = g;
+      this.rotorChop = chop;
+    }
+    this.rotorGain.gain.setTargetAtTime(on ? 0.05 : 0, this.ctx.currentTime, 0.25);
+  };
+})();
+
+// ---- Coral Bay v3 (pass 2): street-race finish fanfare ---------------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+
+  CB.AudioSys.raceFanfare = function () {
+    const self = this;
+    [523, 659, 784, 1046, 1318].forEach(function (n, i) {
+      setTimeout(function () { self.blip(n, 0.25, 'triangle', 0.18); }, i * 110);
+    });
+  };
+})();

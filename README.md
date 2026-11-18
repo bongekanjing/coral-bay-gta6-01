@@ -90,3 +90,36 @@ other commercial game.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## What is new in v3
+
+- **Day and night** — a full in-game day lasts twelve real minutes, starting
+  at 15:00, with dawn and dusk fades, street lamps and neon that switch on
+  after dark, headlights on traffic and a headlight beam on your own car, and
+  a clock chip in the HUD. Add `?tod=night`, `?tod=dusk`, `?tod=dawn`,
+  `?tod=day` or `?tod=22` to stage a time of day.
+- **Police helicopter** — at four stars and above a helicopter orbits you
+  with a searchlight, a rotor loop and a HUD warning; lose the heat and it
+  leaves.
+- **Traffic lights** — signals at nine intersections run a twenty-second
+  cycle; traffic stops on red and rolls on green.
+- **Port district** — container stacks, gantry cranes, a warehouse with a
+  glowing PORT sign and dock lamps on the west edge of the map.
+- **Street races** — a checkered gate at the plaza opens a four-checkpoint
+  race around the city edge: $400 for finishing, $200 more for beating the
+  75-second par, with your best time saved.
+- **Mission 6: Harbour Lights** — steal a van at the port, haul its cargo
+  to the Coral Hotel within two minutes, lose the heat and reach the pier.
+  Story rewards now run $300, $500, $800, $1000, $1200, $1500.
+- **More variety** — yellow taxi cabs with roof signs, pedestrians with
+  caps, varied hair colours and heights.
+- **Parallel parking** — parked cars now sit along the street, so a stolen
+  car drives away down the road instead of into a building.
+
+## Tips
+
+- The helicopter only hunts at four stars or more: duck behind the port
+  cranes or into the park to break line of sight while the heat cools.
+- The race gate stays shut for twenty seconds after a race; use the pause
+  to plan the checkpoint route around the city edge.
+- Vans are slow but sturdy, and one always waits at the port.

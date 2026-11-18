@@ -217,3 +217,53 @@
 
   CB.People = People;
 })();
+
+// ---- Coral Bay v3: crowd variety — caps, hair, height ----------------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+  const CFG = CB.CFG;
+  const THREE = window.THREE;
+
+  const baseInit = CB.People.init;
+  CB.People.init = function (scene, city, rng) {
+    baseInit.call(this, scene, city, rng);
+    const capCols = [0x1a1a1a, 0x2e4a7a, 0xc0392b, 0x27ae60, 0xf1c40f, 0x8e44ad];
+    const hairCols = [0x1a1210, 0x4a2f18, 0x777777, 0x8a6a3a, 0xb0b0b0, 0x2a1a12];
+    for (const ped of this.peds) {
+      const h = 0.92 + rng() * 0.16;
+      ped.mesh.scale.set(1, h, 1);
+      const hair = ped.mesh.children[6];
+      if (hair && hair.geometry && hair.geometry.type === 'SphereGeometry') {
+        hair.material = new THREE.MeshLambertMaterial({ color: hairCols[Math.floor(rng() * hairCols.length)] });
+      }
+      if (rng() < CFG.pedCapChance) {
+        const capMat = new THREE.MeshLambertMaterial({ color: capCols[Math.floor(rng() * capCols.length)] });
+        const cap = new THREE.Group();
+        const dome = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.28, 0.13, 10), capMat);
+        dome.position.y = 0.05;
+        cap.add(dome);
+        const brim = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.26), capMat);
+        brim.position.set(0, 0.0, 0.3);
+        cap.add(brim);
+        cap.position.y = 1.96;
+        ped.mesh.add(cap);
+      }
+    }
+  };
+})();
+
+// ---- Coral Bay v3 (pass 2): taller peds walk a touch faster ----------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+
+  const baseInit = CB.People.init;
+  CB.People.init = function (scene, city, rng) {
+    baseInit.call(this, scene, city, rng);
+    for (const ped of this.peds) {
+      const h = ped.mesh.scale.y || 1;
+      ped.speed = ped.speed * (0.85 + (h - 0.92) * 0.9);
+    }
+  };
+})();

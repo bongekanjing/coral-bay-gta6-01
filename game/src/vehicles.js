@@ -92,8 +92,9 @@
       g.userData.lightBlue = blue;
     }
     // Headlights and taillights, at the ends of the body for this class.
-    const hlMat = new THREE.MeshLambertMaterial({ color: 0xfff6c8, emissive: 0x776611 });
-    const tlMat = new THREE.MeshLambertMaterial({ color: 0xcc2222, emissive: 0x550000 });
+    const hlMat = new THREE.MeshLambertMaterial({ color: 0xfff6c8, emissive: 0x332e0a });
+    const tlMat = new THREE.MeshLambertMaterial({ color: 0xcc2222, emissive: 0x4a0000 });
+    g.userData.headlightMat = hlMat;
     const endZ = dims.bl / 2 + 0.02;
     for (const sx of [-0.65, 0.65]) {
       const hl = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.08), hlMat);
@@ -300,4 +301,126 @@
   };
 
   CB.Vehicles = Vehicles;
+})();
+
+// ---- Coral Bay v3: taxis, the port van, headlights, traffic lights ---------
+(function () {
+  'use strict';
+  const CB = window.CB;
+  const CFG = CB.CFG;
+  const THREE = window.THREE;
+
+  function taxiSign(mesh, carClass) {
+    const roofY = carClass === 'van' ? 1.86 : carClass === 'sport' ? 1.42 : 1.58;
+    const zc = carClass === 'van' ? 0.1 : -0.25;
+    const signMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a, emissive: 0x664411 });
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.3, 0.42), signMat);
+    sign.position.set(0, roofY, zc);
+    mesh.add(sign);
+    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.99, 0.1, 0.46),
+      new THREE.MeshLambertMaterial({ color: 0xffd21a, emissive: 0xaa8800 }));
+    glow.position.set(0, roofY + 0.18, zc);
+    mesh.add(glow);
+  }
+
+  function toTaxi(scene, entry) {
+    const cls = entry.carClass || (entry.mesh.userData && entry.mesh.userData.carClass) || 'sedan';
+    const old = entry.mesh;
+    scene.remove(old);
+    const mesh = CB.Vehicles.makeCar(0xf7c600, false, cls);
+    mesh.position.copy(old.position);
+    mesh.rotation.y = old.rotation.y;
+    scene.add(mesh);
+    entry.mesh = mesh;
+    entry.isTaxi = true;
+    taxiSign(mesh, cls);
+  }
+
+  const baseInit = CB.Vehicles.init;
+  CB.Vehicles.init = function (scene, city, rng) {
+    baseInit.call(this, scene, city, rng);
+    if (this.traffic.length) toTaxi(scene, this.traffic[0]);
+    if (this.parked.length) toTaxi(scene, this.parked[0]);
+    for (const car of this.traffic) {
+      if (!car.isTaxi && rng() < CFG.taxiChance) toTaxi(scene, car);
+    }
+    for (const p of this.parked) {
+      if (!p.isTaxi && rng() < CFG.taxiChance) toTaxi(scene, p);
+    }
+    // One van always waits at the port, so the harbour job never depends
+    // on the random draw: repurpose the last parked car, keeping the count.
+    const last = this.parked[this.parked.length - 1];
+    if (last) {
+      scene.remove(last.mesh);
+      const van = CB.Vehicles.makeCar(0xd8d8d8, false, 'van');
+      van.position.set(-230, 0, 24);
+      van.rotation.y = Math.PI;
+      scene.add(van);
+      last.mesh = van;
+      last.x = -230;
+      last.z = 24;
+      last.heading = Math.PI;
+      last.carClass = 'van';
+      last.isTaxi = false;
+      last.stolen = false;
+      last.wrecked = false;
+    }
+  };
+
+  function lightHold(city, car) {
+    if (!city.lightByKey) return false;
+    const key = Math.round(car.next.x / CFG.pitch) + ',' + Math.round(car.next.z / CFG.pitch);
+    const L = city.lightByKey[key];
+    if (!L) return false;
+    const ew = Math.abs(car.next.x - car.node.x) > Math.abs(car.next.z - car.node.z);
+    const go = ew ? L.ewGo : L.nsGo;
+    if (go) return false;
+    const tx = car.next.x + (car.laneX || 0);
+    const tz = car.next.z + (car.laneZ || 0);
+    return Math.hypot(tx - car.x, tz - car.z) < 18;
+  }
+
+  const baseUpdate = CB.Vehicles.update;
+  CB.Vehicles.update = function (dt, city, rng, playerCar) {
+    if (city.trafficLights) CB.City.updateLights(city);
+    for (const car of this.traffic) {
+      if (lightHold(city, car)) {
+        if (car._heldTarget === undefined) car._heldTarget = car.targetSpeed;
+        car.targetSpeed = 0;
+      } else if (car._heldTarget !== undefined) {
+        car.targetSpeed = car._heldTarget;
+        car._heldTarget = undefined;
+      }
+    }
+    baseUpdate.call(this, dt, city, rng, playerCar);
+    const hex = city.isNight ? 0xfff2b0 : 0x332e0a;
+    const shine = function (mesh) {
+      if (!mesh) return;
+      const m = mesh.userData && mesh.userData.headlightMat;
+      if (m) m.emissive.setHex(hex);
+    };
+    for (const car of this.traffic) shine(car.mesh);
+    for (const p of this.parked) shine(p.mesh);
+    const pl = CB.Game.player;
+    if (pl && pl.inCar && pl.car) shine(pl.car.mesh);
+    // Nose-to-nose deadlock breaker: two cars stopped facing each other
+    // (each braking for the other) never clear on their own, so slide the
+    // second one into its right-hand lane and let both roll on.
+    for (let i = 0; i < this.traffic.length; i++) {
+      for (let j = i + 1; j < this.traffic.length; j++) {
+        const a = this.traffic[i], b = this.traffic[j];
+        if (Math.abs(a.speed) > 0.5 || Math.abs(b.speed) > 0.5) continue;
+        const dx = b.x - a.x, dz = b.z - a.z;
+        if (dx * dx + dz * dz > 49) continue;
+        const facing = Math.sin(a.heading) * Math.sin(b.heading) + Math.cos(a.heading) * Math.cos(b.heading);
+        if (facing > -0.7) continue;
+        const side = Math.abs(dx * Math.cos(a.heading) - dz * Math.sin(a.heading));
+        if (side > 2.4) continue;
+        const rx = -Math.cos(b.heading), rz = Math.sin(b.heading);
+        b.x += rx * 3.5;
+        b.z += rz * 3.5;
+        b.mesh.position.set(b.x, 0, b.z);
+      }
+    }
+  };
 })();

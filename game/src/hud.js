@@ -178,3 +178,114 @@
 
   CB.HUD = HUD;
 })();
+
+// ---- Coral Bay v3: clock chip, heli warning, minimap extras ----------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+
+  const baseInit = CB.HUD.init;
+  CB.HUD.init = function () {
+    baseInit.call(this);
+    const top = document.getElementById('topleft');
+    const clock = document.createElement('div');
+    clock.id = 'clock';
+    clock.textContent = '15:00 DAY';
+    top.appendChild(clock);
+    const warn = document.createElement('div');
+    warn.id = 'heli-warn';
+    warn.textContent = 'POLICE HELICOPTER OVERHEAD';
+    warn.style.display = 'none';
+    document.getElementById('hud').appendChild(warn);
+    const st = document.createElement('style');
+    st.textContent = '#clock{font-size:13px;font-weight:800;letter-spacing:2px;color:#9fd4ff;margin-top:5px}' +
+      '#heli-warn{position:absolute;top:64px;right:14px;padding:7px 12px;background:rgba(120,0,0,.78);' +
+      'border:1px solid #ff5a4e;border-radius:6px;font-size:12px;font-weight:800;letter-spacing:1px}';
+    document.head.appendChild(st);
+  };
+
+  const baseUpdate = CB.HUD.update;
+  CB.HUD.update = function (player) {
+    baseUpdate.call(this, player);
+    const city = CB.Game.city;
+    if (city) {
+      const h = city.timeOfDay || 15;
+      const hh = Math.floor(h);
+      const mm = Math.floor((h - hh) * 60);
+      const el = document.getElementById('clock');
+      if (el) {
+        el.textContent = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0') +
+          (city.isNight ? ' NIGHT' : ' DAY');
+      }
+    }
+    if (CB.Missions.race) {
+      const t = document.getElementById('timer');
+      t.textContent = CB.Missions.race.t.toFixed(1) + 's';
+      t.style.display = 'block';
+    }
+  };
+
+  const baseDraw = CB.HUD.drawMinimap;
+  CB.HUD.drawMinimap = function (player) {
+    baseDraw.call(this, player);
+    const ctx = this.mctx;
+    const city = CB.Game.city;
+    if (!ctx || !city) return;
+    const px = function (x) { return (x + 268) / 536 * 190; };
+    const pz = function (z) { return (z + 268) / 536 * 190; };
+    if (city.trafficLights) {
+      for (const L of city.trafficLights) {
+        ctx.fillStyle = L.ewGo ? '#2ecc71' : L.ewYellow ? '#f1c40f' : '#e74c3c';
+        ctx.beginPath();
+        ctx.arc(px(L.x), pz(L.z), 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    const heli = CB.Police.heli;
+    if (heli) {
+      ctx.strokeStyle = '#ff5a4e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(px(heli.mesh.position.x), pz(heli.mesh.position.z),
+        7 + Math.sin(CB.Game.time * 4) * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  };
+})();
+
+// ---- Coral Bay v3 (pass 2): race gate + checkpoints on the minimap ---------
+(function () {
+  'use strict';
+  const CB = window.CB;
+
+  const baseDraw = CB.HUD.drawMinimap;
+  CB.HUD.drawMinimap = function (player) {
+    baseDraw.call(this, player);
+    const ctx = this.mctx;
+    const city = CB.Game.city;
+    if (!ctx || !city) return;
+    const px = function (x) { return (x + 268) / 536 * 190; };
+    const pz = function (z) { return (z + 268) / 536 * 190; };
+    const g = city.locations.raceGate;
+    if (g) {
+      ctx.fillStyle = '#f5f5f5';
+      ctx.fillRect(px(g.x) - 3, pz(g.z) - 3, 6, 6);
+      ctx.fillStyle = '#111111';
+      ctx.fillRect(px(g.x) - 3, pz(g.z) - 3, 3, 3);
+      ctx.fillRect(px(g.x), pz(g.z), 3, 3);
+    }
+    const race = CB.Missions.race;
+    if (race) {
+      const cp = CB.CFG.raceCheckpoints[race.cp];
+      const pulse = 5 + Math.sin(CB.Game.time * 5) * 1.5;
+      ctx.fillStyle = '#2aff66';
+      ctx.beginPath();
+      ctx.moveTo(px(cp[0]), pz(cp[1]) - pulse);
+      ctx.lineTo(px(cp[0]) + pulse, pz(cp[1]));
+      ctx.lineTo(px(cp[0]), pz(cp[1]) + pulse);
+      ctx.lineTo(px(cp[0]) - pulse, pz(cp[1]));
+      ctx.closePath();
+      ctx.fill();
+    }
+  };
+})();

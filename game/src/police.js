@@ -210,3 +210,116 @@
 
   CB.Police = Police;
 })();
+
+// ---- Coral Bay v3: police helicopter ---------------------------------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+  const THREE = window.THREE;
+
+  function buildHeli(scene) {
+    const g = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x1a2f4a });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(3.1, 1.5, 4.6), bodyMat);
+    g.add(body);
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.9, 1.6),
+      new THREE.MeshLambertMaterial({ color: 0x9fd4ff }));
+    glass.position.set(0, 0.35, 1.6);
+    g.add(glass);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 4.2), bodyMat);
+    tail.position.set(0, 0.3, -4.2);
+    g.add(tail);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.6, 1.1), bodyMat);
+    fin.position.set(0, 1.0, -6.0);
+    g.add(fin);
+    for (const sx of [-1.2, 1.2]) {
+      const skid = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 4.4),
+        new THREE.MeshLambertMaterial({ color: 0x222222 }));
+      skid.position.set(sx, -1.0, 0);
+      g.add(skid);
+    }
+    const rotor = new THREE.Group();
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.7, 6),
+      new THREE.MeshLambertMaterial({ color: 0x222222 }));
+    mast.position.y = 0.3;
+    rotor.add(mast);
+    const bladeMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    for (const ry of [0, Math.PI / 2]) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.07, 0.55), bladeMat);
+      blade.rotation.y = ry;
+      rotor.add(blade);
+    }
+    rotor.position.y = 1.05;
+    g.add(rotor);
+    g.userData.rotor = rotor;
+    const beam = new THREE.SpotLight(0xfff6c8, 0, 70, 0.42, 0.5, 1.1);
+    scene.add(beam);
+    const beamTarget = new THREE.Object3D();
+    scene.add(beamTarget);
+    beam.target = beamTarget;
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(3.4, 20, 12, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true,
+        opacity: 0.15, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+    scene.add(cone);
+    g.userData.beam = beam;
+    g.userData.beamTarget = beamTarget;
+    g.userData.cone = cone;
+    scene.add(g);
+    return g;
+  }
+
+  function removeHeli(P) {
+    if (!P.heli) return;
+    const H = P.heli;
+    P.scene.remove(H.mesh);
+    P.scene.remove(H.beam);
+    P.scene.remove(H.cone);
+    P.scene.remove(H.target);
+    P.heli = null;
+    const warn = document.getElementById('heli-warn');
+    if (warn) warn.style.display = 'none';
+    if (CB.AudioSys.rotorSet) CB.AudioSys.rotorSet(false);
+  }
+
+  const baseUpdate = CB.Police.update;
+  CB.Police.update = function (dt, player) {
+    baseUpdate.call(this, dt, player);
+    if (this.wanted >= CB.CFG.heliSpawnStars && !this.heli) {
+      const mesh = buildHeli(this.scene);
+      this.heli = { mesh: mesh, angle: -0.66, beam: mesh.userData.beam,
+        cone: mesh.userData.cone, target: mesh.userData.beamTarget };
+      const warn = document.getElementById('heli-warn');
+      if (warn) warn.style.display = 'block';
+      CB.HUD.banner('POLICE HELICOPTER', 'Air support is overhead — break line of sight and lay low.');
+      if (CB.AudioSys.rotorSet) CB.AudioSys.rotorSet(true);
+    } else if (this.wanted < CB.CFG.heliSpawnStars && this.heli) {
+      removeHeli(this);
+    }
+    if (this.heli) {
+      const H = this.heli;
+      H.angle += dt * 0.3;
+      const hx = player.x + Math.sin(H.angle) * CB.CFG.heliOrbitRadius;
+      const hz = player.z + Math.cos(H.angle) * CB.CFG.heliOrbitRadius;
+      const hy = CB.CFG.heliHeight + Math.sin(CB.Game.time * 0.7) * 1.5;
+      H.mesh.position.set(hx, hy, hz);
+      H.mesh.rotation.y = Math.atan2(player.x - hx, player.z - hz);
+      H.mesh.userData.rotor.rotation.y += dt * 26;
+      H.beam.position.set(hx, hy - 0.5, hz);
+      H.beam.intensity = 3;
+      H.target.position.set(player.x, 0.5, player.z);
+      const dx = hx - player.x, dy = hy - 0.5, dz = hz - player.z;
+      const dist = Math.hypot(dx, dy, dz) || 1;
+      const cone = H.cone;
+      cone.position.set((hx + player.x) / 2, (hy + 0.5) / 2, (hz + player.z) / 2);
+      cone.scale.set(1, dist / 20, 1);
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(dx / dist, dy / dist, dz / dist));
+    }
+  };
+
+  const baseClear = CB.Police.clearAll;
+  CB.Police.clearAll = function () {
+    removeHeli(this);
+    baseClear.call(this);
+  };
+})();

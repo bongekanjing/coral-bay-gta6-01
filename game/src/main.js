@@ -410,8 +410,8 @@
       // game time under software rendering).
       if (this.shot && !this.shotDone && this.time >= this.shotReadyAt) {
         this.shotDone = true;
-        if (this.shot === 'mission') {
-          CB.HUD.banner('FIRST WHEELS', 'Marco is waiting at the pier. He has a job — but first, you need wheels.');
+        if (this.shot == 'mission') {
+          CB.HUD.banner('HARBOUR LIGHTS', 'Steal a van at the port, haul the cargo to the Coral Hotel.');
         }
         window.__shotReady = true;
       }
@@ -420,4 +420,43 @@
 
   CB.Game = Game;
   window.addEventListener('DOMContentLoaded', function () { Game.boot(); });
+})();
+
+// ---- Coral Bay v3: day/night tick hook and shot staging --------------------
+(function () {
+  'use strict';
+  const CB = window.CB;
+
+  const baseTick = CB.Game.tick;
+  CB.Game.tick = function (dt) {
+    baseTick.call(this, dt);
+    if (this.city && CB.City.updateDayNight) CB.City.updateDayNight(this.city, dt);
+  };
+
+  const baseStage = CB.Game.stageShot;
+  CB.Game.stageShot = function (shot) {
+    baseStage.call(this, shot);
+    const p = this.player;
+    if (shot === 'cover') {
+      CB.City.setTimeOfDay(this.city, 22);
+    } else if (shot === 'chase') {
+      CB.Police.setWanted(5);
+      p.zoom = 1.8;
+      p.camPitch = -0.1;
+    } else if (shot === 'mission') {
+      CB.Missions.index = 5;
+      CB.Missions.startStory();
+      let van = null;
+      for (const c of CB.Vehicles.parked) {
+        if (c.carClass === 'van' && !c.stolen && !c.wrecked && c.x < -220) { van = c; break; }
+      }
+      if (van) {
+        p.reset(van.x + 2, van.z, 0);
+        this.ensureCar(van.x, van.z, Math.PI);
+        this.input['w'] = true;
+      }
+    } else if (shot === 'city') {
+      CB.City.setTimeOfDay(this.city, 18.5);
+    }
+  };
 })();

@@ -104,8 +104,18 @@
     pistolMag: 12,
     reloadTime: 1.2,
 
-    // Missions and money.
-    missionRewards: [300, 500, 800, 1000, 1200],
+    // Missions, money, races and the day cycle.
+    missionRewards: [300, 500, 800, 1000, 1200, 1500],
+    racePrize: 400,
+    raceParBonus: 200,
+    raceParTime: 75,
+    raceCheckpoints: [[-144, -144], [144, -144], [144, 144], [-144, 144]],
+    dayLength: 720,
+    taxiChance: 0.22,
+    pedCapChance: 0.3,
+    heliSpawnStars: 4,
+    heliOrbitRadius: 20,
+    heliHeight: 12,
     taxiFare: [40, 80],
     stashReward: 100,
     stashCount: 10,

@@ -468,8 +468,8 @@
         const along = CB.range(rng, -200, 200);
         const off = (rng() < 0.5 ? -1 : 1) * (CFG.streetHalf - 2.2);
         city.parkedSpots.push(horizontal ?
-          { x: along, z: street + off, heading: off > 0 ? 0 : Math.PI } :
-          { x: street + off, z: along, heading: off > 0 ? Math.PI / 2 : -Math.PI / 2 });
+          { x: along, z: street + off, heading: off > 0 ? Math.PI / 2 : -Math.PI / 2 } :
+          { x: street + off, z: along, heading: off > 0 ? Math.PI : 0 });
       }
 
       return city;
@@ -533,4 +533,307 @@
   };
 
   CB.City = City;
+})();
+
+// ---- Coral Bay v3: day/night, the port, traffic lights, race gate ----------
+// Fresh systems layered on the v2 builder: the original build runs first,
+// then the wrapper below adds the new district and the new controls.
+(function () {
+  'use strict';
+  const CB = window.CB;
+  const CFG = CB.CFG;
+  const THREE = window.THREE;
+
+  function todFromQuery() {
+    try {
+      const q = new URLSearchParams(window.location.search).get('tod');
+      if (!q) return null;
+      const named = { night: 22, dusk: 18.5, dawn: 6, day: 12 };
+      if (named[q] !== undefined) return named[q];
+      const h = parseFloat(q);
+      return Number.isFinite(h) ? h : null;
+    } catch (e) { return null; }
+  }
+
+  const START_HOUR = todFromQuery();
+
+  function skyStops() {
+    const C = function (h) { return new THREE.Color(h); };
+    return [
+      { h: 0, sky: C(0x0a1428), fog: C(0x0a1428), sun: 0.04, sunCol: C(0x8fa8ff), hemi: 0.22, amb: 0.1 },
+      { h: 5, sky: C(0x0a1428), fog: C(0x0a1428), sun: 0.04, sunCol: C(0x8fa8ff), hemi: 0.22, amb: 0.1 },
+      { h: 6.5, sky: C(0xe8a06a), fog: C(0xd89a7a), sun: 0.35, sunCol: C(0xffb27a), hemi: 0.4, amb: 0.18 },
+      { h: 9, sky: C(0x7ec8e8), fog: C(0xf2c98f), sun: 1.15, sunCol: C(0xffd9a8), hemi: 0.75, amb: 0.25 },
+      { h: 15, sky: C(0x7ec8e8), fog: C(0xf2c98f), sun: 1.15, sunCol: C(0xffd9a8), hemi: 0.75, amb: 0.25 },
+      { h: 17.5, sky: C(0x9a7ab0), fog: C(0xe09a6a), sun: 0.7, sunCol: C(0xff9a5a), hemi: 0.55, amb: 0.2 },
+      { h: 18.5, sky: C(0x4a3a6e), fog: C(0xa06a72), sun: 0.3, sunCol: C(0xff7a4a), hemi: 0.4, amb: 0.15 },
+      { h: 20, sky: C(0x0a1428), fog: C(0x0a1428), sun: 0.05, sunCol: C(0x8fa8ff), hemi: 0.22, amb: 0.1 },
+      { h: 24, sky: C(0x0a1428), fog: C(0x0a1428), sun: 0.04, sunCol: C(0x8fa8ff), hemi: 0.22, amb: 0.1 },
+    ];
+  }
+
+  const STOPS = skyStops();
+
+  function applyDayNight(city) {
+    const L = city.lights;
+    if (!L || !L.sun) return;
+    const hour = city.timeOfDay;
+    let a = STOPS[0], b = STOPS[STOPS.length - 1];
+    for (let i = 0; i < STOPS.length - 1; i++) {
+      if (hour >= STOPS[i].h && hour <= STOPS[i + 1].h) { a = STOPS[i]; b = STOPS[i + 1]; break; }
+    }
+    const span = (b.h - a.h) || 1;
+    const t = CB.clamp((hour - a.h) / span, 0, 1);
+    const scene = city.sceneRef;
+    if (scene) {
+      scene.background.lerpColors(a.sky, b.sky, t);
+      if (scene.fog) scene.fog.color.lerpColors(a.fog, b.fog, t);
+    }
+    L.sun.intensity = CB.lerp(a.sun, b.sun, t);
+    L.sun.color.lerpColors(a.sunCol, b.sunCol, t);
+    const ang = ((hour - 6) / 12) * Math.PI;
+    L.sun.position.set(180 * Math.cos(ang), Math.max(24, 140 * Math.sin(ang)), 120);
+    if (L.hemi) L.hemi.intensity = CB.lerp(a.hemi, b.hemi, t);
+    if (L.amb) L.amb.intensity = CB.lerp(a.amb, b.amb, t);
+    const night = hour >= 19 || hour < 5.5;
+    city.isNight = night;
+    if (city.lampMat) city.lampMat.emissiveIntensity = night ? 1.9 : 0.55;
+    if (city.neonLights) for (const pl of city.neonLights) pl.intensity = night ? 1.7 : 0.7;
+    if (city.portLampMats) for (const m of city.portLampMats) m.emissiveIntensity = night ? 2.2 : 0.7;
+    if (city.portLights) for (const pl of city.portLights) pl.intensity = night ? 1.1 : 0;
+  }
+
+  CB.City.setTimeOfDay = function (city, hours) {
+    if (!city) return;
+    const h = ((hours % 24) + 24) % 24;
+    city.daySeconds = ((h - 15 + 24) % 24) * (CFG.dayLength / 24);
+    city.timeOfDay = h;
+    applyDayNight(city);
+  };
+
+  CB.City.updateDayNight = function (city, dt) {
+    if (!city || !city.lights) return;
+    if (CB.Game.state === 'paused') return;
+    city.daySeconds = (city.daySeconds || 0) + dt;
+    city.timeOfDay = (15 + city.daySeconds / (CFG.dayLength / 24)) % 24;
+    applyDayNight(city);
+  };
+
+  function paintHead(head, go, yellow) {
+    head.g.emissive.setHex(go ? 0x2aff66 : 0x0a2a12);
+    head.y.emissive.setHex(yellow ? 0xffd21a : 0x2a220a);
+    head.r.emissive.setHex(!go && !yellow ? 0xff2a2a : 0x2a0a0a);
+  }
+
+  CB.City.updateLights = function (city) {
+    if (!city.trafficLights) return;
+    const ph = CB.Game.time % 20;
+    for (const L of city.trafficLights) {
+      L.ewGo = ph < 8;
+      L.ewYellow = ph >= 8 && ph < 10;
+      L.nsGo = ph >= 10 && ph < 18;
+      L.nsYellow = ph >= 18;
+      paintHead(L.ew, L.ewGo, L.ewYellow);
+      paintHead(L.ns, L.nsGo, L.nsYellow);
+    }
+  };
+
+  function boardTexture(words, fg) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = '#0e0e16';
+    g.fillRect(0, 0, 256, 64);
+    g.strokeStyle = fg; g.lineWidth = 3;
+    g.strokeRect(4, 4, 248, 56);
+    g.font = 'bold 32px Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowColor = fg; g.shadowBlur = 16;
+    g.fillStyle = fg;
+    g.fillText(words, 128, 33);
+    g.shadowBlur = 0; g.fillStyle = '#ffffff';
+    g.fillText(words, 128, 33);
+    return new THREE.CanvasTexture(c);
+  }
+
+  function buildPort(scene, city, rng) {
+    const slab = new THREE.Mesh(
+      new THREE.PlaneGeometry(46, 226),
+      new THREE.MeshLambertMaterial({ color: 0x8f8a80 }));
+    slab.rotation.x = -Math.PI / 2;
+    slab.position.set(-242, 0.03, 0);
+    scene.add(slab);
+    city.locations.port = { x: -238, z: 0 };
+    const boxCols = [0xa34a32, 0x2e6a8a, 0x3f8f3a, 0xc97a1e, 0x7a7a7a, 0x8a4a6a];
+    const rows = [-90, -54, -18, 18, 54, 90];
+    const cols = [-256, -249, -242];
+    for (const rz of rows) {
+      for (const cx of cols) {
+        const high = 1 + Math.floor(rng() * 3);
+        const mat = new THREE.MeshLambertMaterial({ color: boxCols[Math.floor(rng() * boxCols.length)] });
+        for (let k = 0; k < high; k++) {
+          const box = new THREE.Mesh(new THREE.BoxGeometry(6.2, 2.6, 2.6), mat);
+          box.position.set(cx, 1.3 + k * 2.6, rz);
+          box.rotation.y = (rng() - 0.5) * 0.06;
+          scene.add(box);
+        }
+        city.colliders.push({ minX: cx - 3.2, maxX: cx + 3.2, minZ: rz - 1.5, maxZ: rz + 1.5 });
+      }
+    }
+    for (const cz of [-72, 72]) {
+      const steel = new THREE.MeshLambertMaterial({ color: 0xd8a018 });
+      for (const lx of [-258, -236]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(1.4, 17, 1.4), steel);
+        leg.position.set(lx, 8.5, cz);
+        scene.add(leg);
+        city.colliders.push({ minX: lx - 0.9, maxX: lx + 0.9, minZ: cz - 0.9, maxZ: cz + 0.9 });
+      }
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(24, 1.6, 2.2), steel);
+      beam.position.set(-247, 17.6, cz);
+      scene.add(beam);
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(3, 2.4, 3),
+        new THREE.MeshLambertMaterial({ color: 0x2c3e50 }));
+      cab.position.set(-247, 15.4, cz);
+      scene.add(cab);
+      const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 9, 6),
+        new THREE.MeshLambertMaterial({ color: 0x222222 }));
+      cable.position.set(-240, 11, cz);
+      scene.add(cable);
+      const hook = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2),
+        new THREE.MeshLambertMaterial({ color: 0x888888 }));
+      hook.position.set(-240, 6.2, cz);
+      scene.add(hook);
+    }
+    const ware = new THREE.Mesh(new THREE.BoxGeometry(18, 9, 12),
+      new THREE.MeshLambertMaterial({ color: 0x9a938a }));
+    ware.position.set(-252, 4.5, 100);
+    scene.add(ware);
+    city.colliders.push({ minX: -261, maxX: -243, minZ: 94, maxZ: 106 });
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(13, 3.2),
+      new THREE.MeshBasicMaterial({ map: boardTexture('PORT', '#ffb02e') }));
+    sign.position.set(-242.8, 6.4, 100);
+    sign.rotation.y = Math.PI / 2;
+    scene.add(sign);
+    city.portLampMats = [];
+    city.portLights = [];
+    for (const lz of [-81, -27, 27, 81]) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 7, 6),
+        new THREE.MeshLambertMaterial({ color: 0x2c3e50 }));
+      pole.position.set(-228, 3.5, lz);
+      scene.add(pole);
+      const lampMat = new THREE.MeshLambertMaterial({ color: 0xffe9a8, emissive: 0xffdf8a });
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), lampMat);
+      lamp.position.set(-228, 7.2, lz);
+      scene.add(lamp);
+      city.portLampMats.push(lampMat);
+    }
+    for (const lz of [-40, 40]) {
+      const pl = new THREE.PointLight(0xffd9a0, 0, 60);
+      pl.position.set(-240, 9, lz);
+      scene.add(pl);
+      city.portLights.push(pl);
+    }
+  }
+
+  function signalHead(scene, x, y, z, ry) {
+    const g = new THREE.Group();
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.5, 0.55),
+      new THREE.MeshLambertMaterial({ color: 0x1a1a1a }));
+    g.add(housing);
+    const mk = function (col, dy) {
+      const m = new THREE.MeshLambertMaterial({ color: 0x111111, emissive: col });
+      const s = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), m);
+      s.position.set(0, dy, -0.32);
+      g.add(s);
+      return m;
+    };
+    const head = { r: mk(0x2a0a0a, 0.8), y: mk(0x2a220a, 0), g: mk(0x2aff66, -0.8) };
+    g.position.set(x, y, z);
+    g.rotation.y = ry;
+    scene.add(g);
+    return head;
+  }
+
+  function buildSignals(scene, city) {
+    city.trafficLights = [];
+    city.lightByKey = {};
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const x = i * CFG.pitch, z = j * CFG.pitch;
+        const poleMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 7.5, 6), poleMat);
+        pole.position.set(x + 10, 3.75, z - 10);
+        scene.add(pole);
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 9), poleMat);
+        arm.position.set(x + 10, 7.2, z - 5.5);
+        scene.add(arm);
+        const ew = signalHead(scene, x + 10, 6.4, z - 1.5, 0);
+        const ns = signalHead(scene, x + 10, 6.4, z - 9.5, Math.PI / 2);
+        const L = { i: i, j: j, x: x, z: z, ewGo: true, ewYellow: false, nsGo: false, nsYellow: false, ew: ew, ns: ns };
+        city.trafficLights.push(L);
+        city.lightByKey[i + ',' + j] = L;
+      }
+    }
+  }
+
+  function checkTexture() {
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 32;
+    const g = c.getContext('2d');
+    for (let r = 0; r < 2; r++) {
+      for (let k = 0; k < 8; k++) {
+        g.fillStyle = (r + k) % 2 === 0 ? '#111111' : '#f5f5f5';
+        g.fillRect(k * 16, r * 16, 16, 16);
+      }
+    }
+    return new THREE.CanvasTexture(c);
+  }
+
+  function buildRaceGate(scene, city) {
+    city.locations.raceGate = { x: 36, z: 0 };
+    const postMat = new THREE.MeshLambertMaterial({ color: 0xdddddd });
+    for (const pz of [-8.5, 8.5]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 5.4, 8), postMat);
+      post.position.set(36, 2.7, pz);
+      scene.add(post);
+      city.colliders.push({ minX: 35.2, maxX: 36.8, minZ: pz - 0.8, maxZ: pz + 0.8 });
+    }
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(17, 2.2),
+      new THREE.MeshBasicMaterial({ map: checkTexture(), side: THREE.DoubleSide }));
+    flag.rotation.y = Math.PI / 2;
+    flag.position.set(36, 5.0, 0);
+    scene.add(flag);
+  }
+
+  const baseBuild = CB.City.build;
+  CB.City.build = function (scene, rng) {
+    const city = baseBuild.call(CB.City, scene, rng);
+    city.sceneRef = scene;
+    for (const n of city.intersections) {
+      n.i = Math.round(n.x / CFG.pitch);
+      n.j = Math.round(n.z / CFG.pitch);
+    }
+    city.lights = {};
+    for (const o of scene.children) {
+      if (o.isDirectionalLight) city.lights.sun = o;
+      else if (o.isHemisphereLight) city.lights.hemi = o;
+      else if (o.isAmbientLight) city.lights.amb = o;
+      else if (o.isPointLight) {
+        city.neonLights = city.neonLights || [];
+        city.neonLights.push(o);
+      } else if (o.isInstancedMesh && o.material && o.material.emissive &&
+        o.material.emissive.getHex() === 0xffdf8a) {
+        city.lampMat = o.material;
+      }
+    }
+    const startHour = START_HOUR === null ? 15 : START_HOUR;
+    city.daySeconds = ((startHour - 15 + 24) % 24) * (CFG.dayLength / 24);
+    city.timeOfDay = startHour;
+    city.isNight = startHour >= 19 || startHour < 5.5;
+    buildPort(scene, city, rng);
+    buildSignals(scene, city);
+    buildRaceGate(scene, city);
+    applyDayNight(city);
+    return city;
+  };
 })();
